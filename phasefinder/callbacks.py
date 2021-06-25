@@ -42,11 +42,9 @@ class Training(Callback):
 		self.history = {"epoch": [], "time": [], "loss_1": [], "loss_2": [], "loss": []}
 
 	def start_of_training(self):
-		self.history["epoch"].append(0)
-		self.history["time"].append(0)
-		self.history["loss_1"].append(0)
-		self.history["loss_2"].append(0)
-		self.history["loss"].append(0)
+		self._initial_epochs = self.history["epoch"][-1] if len(self.history["epoch"]) > 0 else 0
+		if isinstance(self.history["epoch"], np.ndarray):
+			self.history = {key: list(value) for (key, value) in self.history.items()}
 
 	def start_of_epoch(self, epoch):
 		self._initial_time = time.time()
@@ -56,12 +54,12 @@ class Training(Callback):
 		loss_1 = np.mean(np.asarray(batch_logs["loss_1"]))
 		loss_2 = np.mean(np.asarray(batch_logs["loss_2"]))
 		loss = np.mean(np.asarray(batch_logs["loss"]))
-		self.history["epoch"].append(epoch+1)
-		self.history["time"].append( self.history["time"][-1]+delta_time )
+		self.history["epoch"].append(self._initial_epochs+epoch+1)
+		self.history["time"].append( self.history["time"][-1]+delta_time ) if len(self.history["time"]) > 0 else self.history["time"].append(delta_time)
 		self.history["loss_1"].append(loss_1)
 		self.history["loss_2"].append(loss_2)
 		self.history["loss"].append(loss)
-		print("Epoch {} loss {:.3f}".format(epoch+1, loss))
+		print("Epoch {} loss {:.3f}".format(self._initial_epochs+epoch+1, loss))
 
 	def end_of_training(self):
 		self.history = {key: np.array(value) for (key, value) in self.history.items()}

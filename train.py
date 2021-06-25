@@ -18,7 +18,8 @@ parser.add_argument('--data_1', '-d1', required=True, type=str, help='Data file 
 parser.add_argument('--data_2', '-d2', required=True, type=str, help='Data file at lower temperature.')
 # SGD hyperparameters
 parser.add_argument('--batch_size','-b', default=128, type=int, help='Minibatch size.')
-parser.add_argument('--epochs','-e', default=100, type=int, help='Number of epochs for training.')
+parser.add_argument('--pretrain_epochs','-pe', default=50, type=int, help='Number of epochs for pretraining.')
+parser.add_argument('--total_epochs','-te', default=100, type=int, help='Total number of epochs including pretraining.')
 parser.add_argument('--lr','-lr', default=1e-3, type=float, help='Learning rate.')
 # regularization
 parser.add_argument('--reg_weight','-rw', default=0.1, type=float, help='Coefficient for broken symmetry MRA regularizer.')
@@ -44,22 +45,19 @@ train_loader_1 = DataLoader(TensorDataset(torch.as_tensor(X_1)), batch_size=args
 train_loader_2 = DataLoader(TensorDataset(torch.as_tensor(X_2)), batch_size=args.batch_size, shuffle=True, drop_last=True)  # , num_workers=8)
 
 # build model
-group = pf.models.Group(2, [(0, 1)])
+group = pf.models.Group(2, [[(0, 1)]])
 observable = pf.models.IsingObservable( int(np.sqrt(X_1.shape[1])) )
 model = pf.models.PFNet(observable, group, regularizer_weight=args.reg_weight)
 callbacks = [pf.callbacks.Training()]
 
 # create model trainer
-trainer = pf.Trainer(model, epochs=args.epochs, lr=args.lr, device=args.device)
+trainer = pf.Trainer(model, epochs=args.pretrain_epochs, lr=args.lr, device=args.device)
 
-# train model
-#trainer.init_MRA(train_loader_1, train_loader_2, iters=5)
-#trainer.fit(train_loader_1, train_loader_2, callbacks)
-# testing pretraining here
-trainer.epochs = 20
-trainer.fit(train_loader_1, train_loader_2, [])
-trainer.epochs = args.epochs - trainer.epochs
+# pretrain observable
+trainer.fit(train_loader_1, train_loader_2, callbacks)
+# train observable plus MRA
 trainer.unfreeze_MRA()
+trainer.epochs = args.total_epochs - trainer.epochs
 trainer.fit(train_loader_1, train_loader_2, callbacks)
 
 # evaluate on full training set

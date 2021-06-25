@@ -14,6 +14,10 @@ class Group(object):
 	def __init__(self, degree, generators):
 		self.degree = degree
 		self.generators = generators
+		for g in generators:
+			assert isinstance(g, list), "Each group generator must be a list of tuples."
+			for h in g:
+				assert isinstance(h, tuple), "Each group generator must be a list of tuples."
 
 		self.group = PermutationGroup(*[Permutation(g, size=degree) for g in generators])
 		self.elements = [g.list() for g in self.group._elements]
@@ -35,7 +39,7 @@ class MRA(nn.Module):
 		if broken:
 			with torch.no_grad():
 				init_mean = torch.normal(torch.zeros(input_dim), torch.ones(input_dim))
-				init_mean = init_mean/torch.norm(init_mean)
+				init_mean = 3*init_mean/torch.norm(init_mean)
 			self.mean = nn.Parameter(init_mean, requires_grad=False)
 
 	def EM(self, X, iters=1):
@@ -76,7 +80,7 @@ class PFNet(nn.Module):
 
 	def regularizer(self):
 #		return self.regularizer_weight *( F.relu( self.group.orbit(self.aligner_2.mean).mv(self.aligner_2.mean)/self.aligner_2.mean.pow(2).sum() ).mean() + 1/self.aligner_2.mean.pow(2).sum())
-		return -2*self.regularizer_weight * ( self.aligner_2.mean.pow(2).sum() - self.group.orbit(self.aligner_2.mean).mv(self.aligner_2.mean).mean() )
+		return 2*self.regularizer_weight * 1/( self.aligner_2.mean.pow(2).sum() - self.group.orbit(self.aligner_2.mean).mv(self.aligner_2.mean).mean() )
 
 	def forward(self, X, broken=True):
 		if broken:
