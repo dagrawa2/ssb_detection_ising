@@ -43,7 +43,7 @@ class GMM(nn.Module):
 		with torch.no_grad():
 			weights = torch.exp( torch.einsum("gij,j->gi", self.GX, self.mean)/self.variance )
 			mean_new = ( (self.GX*weights.unsqueeze(-1)).sum(0)/weights.unsqueeze(-1).sum(0) ).mean(0)
-			self.variance = self.mean.pow(2).sum() + self.second_moment - 2*self.mean.dot(mean_new)
+			self.variance = ( self.second_moment - 2*self.mean.dot(mean_new) + self.mean.pow(2).sum() )/self.input_dim
 			self.mean = mean_new
 
 	def loss(self):

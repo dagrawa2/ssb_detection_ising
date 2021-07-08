@@ -54,7 +54,7 @@ class MRA(nn.Module):
 				for _ in range(iters):
 					weights = torch.exp( torch.einsum("gij,j->gi", GX, mean)/variance )
 					mean_new = ( (GX*weights.unsqueeze(-1)).sum(0)/weights.unsqueeze(-1).sum(0) ).mean(0)
-					variance = mean.pow(2).sum() + X.pow(2).sum()/X.size(0) - 2*mean.dot(mean_new)
+					variance = ( mean.pow(2).sum() + X.pow(2).sum()/X.size(0) - 2*mean.dot(mean_new) )/self.input_dim
 					mean = mean_new
 				self.mean.copy_(mean)
 				self.variance_unconstrained.copy_(inverse_softplus(variance))
