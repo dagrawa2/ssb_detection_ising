@@ -80,3 +80,43 @@ class Autoencoder(object):
 
 	def load_model(self, filename):
 		self.model.load_state_dict(torch.load(filename))
+
+
+class GMM(object):
+
+	def __init__(self, model, epochs=1, device="cpu"):
+		self.model = model.to(device)
+		self.epochs = epochs
+		self.device = device
+
+	def fit(self, callbacks):
+		# callbacks before training
+		callbacks = callbacks if isinstance(callbacks, list) else [callbacks]
+		for cb in callbacks:
+			cb.start_of_training()
+		print("Training model ...")
+		print("---")
+		for epoch in range(self.epochs):
+			# callbacks at the start of the epoch
+			for cb in callbacks:
+				cb.start_of_epoch(epoch)
+			self.model.update()
+			loss = self.model.loss()
+			batch_logs = {"loss": [loss.item()]}
+			# callbacks at the end of the epoch
+			for cb in callbacks:
+				cb.end_of_epoch(epoch, batch_logs)
+
+		# callbacks at the end of training
+		for cb in callbacks:
+			cb.end_of_training()
+		print("---")
+
+	def get_params(self):
+		return self.model.mean.data.numpy(), self.model.variance.item()
+
+	def save_model(self, filename):
+		torch.save(self.model.state_dict(), filename)
+
+	def load_model(self, filename):
+		self.model.load_state_dict(torch.load(filename))

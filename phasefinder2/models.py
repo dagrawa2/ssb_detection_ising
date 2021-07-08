@@ -48,7 +48,7 @@ class GMM(nn.Module):
 
 	def loss(self):
 		with torch.no_grad():
-			return -torch.logsumexp(-(self.GX - self.mean.unsqueeze(0).unsqueeze(0)).pow(2).sum(-1)/(2*self.variance), 0).mean() + self.input_dim/2*torch.log(2*np.pi*self.variance)
+			return -torch.logsumexp(-(self.GX - self.mean.unsqueeze(0).unsqueeze(0)).pow(2).sum(-1)/(2*self.variance), 0).mean() + self.input_dim/2*torch.log(2*np.pi*self.variance) + np.log(self.group.order)
 
 
 class Encoder(nn.Module):
@@ -65,7 +65,8 @@ class Encoder(nn.Module):
 		self.linear = nn.Linear(hidden_dim, output_dim, bias=False)
 
 	def forward(self, X):
-		return self.linear(self.activation( self.pool(self.conv(X)).squeeze(-1).squeeze(-1) ))
+		out_single = self.linear(self.activation( self.pool(self.conv(X)).squeeze(-1).squeeze(-1) ))
+		return torch.cat([out_single, -out_single], 1)
 
 
 class Decoder(nn.Module):

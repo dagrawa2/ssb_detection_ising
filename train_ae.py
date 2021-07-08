@@ -54,7 +54,7 @@ for data_file in os.listdir(args.data_dir):
 encoder = pf.models.Encoder((X_train.shape[-1], X_train.shape[-1]), 3, 1)
 decoders = []
 for _ in range(len(data_files)):
-	decoders.append( pf.models.Decoder(1, 64, (X_train.shape[-1], X_train.shape[-1])) )
+	decoders.append( pf.models.Decoder(2, 64, (X_train.shape[-1], X_train.shape[-1])) )
 
 # create trainer and callbacks
 trainer = pf.trainers.Autoencoder(encoder, decoders, epochs=args.epochs, lr=args.lr, device=args.device)
