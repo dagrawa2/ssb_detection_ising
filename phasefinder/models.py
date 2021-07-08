@@ -52,7 +52,7 @@ class MRA(nn.Module):
 				variance = (X - mean.unsqueeze(0)).pow(2).sum()/X.size(0)
 				GX = self.group.orbit(X)
 				for _ in range(iters):
-					weights = torch.exp( torch.einsum("gij,j->gi", GX, mean)/F.softplus(variance) )
+					weights = torch.exp( torch.einsum("gij,j->gi", GX, mean)/variance )
 					mean_new = ( (GX*weights.unsqueeze(-1)).sum(0)/weights.unsqueeze(-1).sum(0) ).mean(0)
 					variance = mean.pow(2).sum() + X.pow(2).sum()/X.size(0) - 2*mean.dot(mean_new)
 					mean = mean_new
@@ -96,7 +96,7 @@ class IsingObservable(nn.Module):
 		self.output_dim = 2
 
 		self.linear = nn.Linear(1, 1)
-		self.conv = nn.Conv1d(1, 1, kernel_size=input_dim, padding_mode="circular", bias=False)
+		self.conv = nn.Conv1d(1, 1, kernel_size=input_dim, padding="same", padding_mode="circular", bias=False)
 
 	def forward(self, X):
 		Q = self.conv(X.unsqueeze(1)).squeeze(1).pow(2).sum(1, keepdim=True)
