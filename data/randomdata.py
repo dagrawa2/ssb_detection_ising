@@ -14,5 +14,5 @@ def generate(path, size=None, p=0.5):
 
 
 generate("T1.txt", size=(256, 16), p=0.5)
-generate("T1.txt", size=(256, 16), p=0.5)
-generate("T2.txt", size=(256, 16), p=0.9)
+generate("T2.txt", size=(256, 16), p=0.5)
+generate("T3.txt", size=(256, 16), p=0.9)
