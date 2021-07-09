@@ -46,7 +46,7 @@ for data_file in os.listdir(args.data_dir):
 	or os.path.splitext(data_file_path)[1] in [".c", ".py"]:
 		continue
 	data_files.append(data_file)
-	X_train, X_val = pf.datasets.Ising(data_file_path, val_size=args.val_size)
+	X_train, X_val = pf.datasets.Ising(data_file_path, val_size=args.val_size, symmetrize=True)
 	train_loaders.append( DataLoader(TensorDataset(torch.as_tensor(X_train)), batch_size=args.batch_size, shuffle=True, drop_last=True) )  # , num_workers=8)
 	val_loaders.append( DataLoader(TensorDataset(torch.as_tensor(X_val)), batch_size=args.val_batch_size, shuffle=False, drop_last=False) )  # , num_workers=8)
 
