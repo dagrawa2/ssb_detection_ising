@@ -65,8 +65,10 @@ class Encoder(nn.Module):
 		self.linear = nn.Linear(hidden_dim, output_dim, bias=False)
 
 	def forward(self, X):
-		out_single = self.linear(self.activation( self.pool(self.conv(X)).squeeze(-1).squeeze(-1) ))
-		return torch.cat([out_single, -out_single], 1)
+		out_conv = self.conv(X)
+		out_1 = self.linear(self.activation( self.pool(out_conv).squeeze(-1).squeeze(-1) ))
+		out_2 = self.linear(self.activation( self.pool(-out_conv).squeeze(-1).squeeze(-1) ))
+		return torch.cat([out_1, -out_2], 1)
 
 
 class Decoder(nn.Module):
