@@ -27,28 +27,49 @@ class Group(object):
 
 class GMM(nn.Module):
 
-	def __init__(self, input_dim, group):
+	def __init__(self, input_dim, group, full_cov=False, epsilon=1e-6):
 		super(GMM, self).__init__()
 		self.input_dim = input_dim
 		self.group = group
+		self.full_cov = full_cov
+		self.epsilon = epsilon
 
 	def initialize(self, X):
 		with torch.no_grad():
 			self.mean = X.mean(0)
-			self.variance = (X - self.mean.unsqueeze(0)).pow(2).sum()/X.size(0)
-			self.second_moment = X.pow(2).sum()/X.size(0)
+			if self.full_cov:
+				X_centered = X-self.mean.unsqueeze(0)
+				self.variance = torch.einsum("ni,nj->ij", X_centered, X_centered)/X.size(0) + self.epsilon*torch.eye(self.input_dim)
+			else:
+				self.variance = (X - self.mean.unsqueeze(0)).pow(2).sum()/X.size(0) + self.epsilon
+				self.second_moment = X.pow(2).sum()/X.size(0)
 			self.GX = self.group.orbit(X)
 
 	def update(self):
 		with torch.no_grad():
-			weights = torch.exp( torch.einsum("gij,j->gi", self.GX, self.mean)/self.variance )
-			mean_new = ( (self.GX*weights.unsqueeze(-1)).sum(0)/weights.unsqueeze(-1).sum(0) ).mean(0)
-			self.variance = ( self.second_moment - 2*self.mean.dot(mean_new) + self.mean.pow(2).sum() )/self.input_dim
-			self.mean = mean_new
+			if self.full_cov:
+				L = torch.linalg.cholesky(self.variance)
+				GX_centered = self.GX-self.mean.unsqueeze(0).unsqueeze(0)
+				L_invGX_centered = torch.triangular_solve(GX_centered.unsqueeze(-1), L.unsqueeze(0).unsqueeze(0), upper=False)[0].squeeze(-1)
+				weights = torch.exp( -torch.einsum("ijk,ijk->ij", L_invGX_centered, L_invGX_centered)/2 )
+				weights = weights/weights.sum(0, keepdim=True)
+				self.mean = ( (self.GX*weights.unsqueeze(-1)).sum(0)).mean(0)
+				self.variance = ( (torch.einsum("ijk,ijl->ijkl", GX_centered, GX_centered)*weights.unsqueeze(-1).unsqueeze(-1)).sum(0)).mean(0) + self.epsilon*torch.eye(self.input_dim)
+			else:
+				weights = torch.exp( torch.einsum("gij,j->gi", self.GX, self.mean)/self.variance )
+				mean_new = ( (self.GX*weights.unsqueeze(-1)).sum(0)/weights.unsqueeze(-1).sum(0) ).mean(0)
+				self.variance = ( self.second_moment - 2*self.mean.dot(mean_new) + self.mean.pow(2).sum() )/self.input_dim + self.epsilon
+				self.mean = mean_new
 
 	def loss(self):
 		with torch.no_grad():
-			return -torch.logsumexp(-(self.GX - self.mean.unsqueeze(0).unsqueeze(0)).pow(2).sum(-1)/(2*self.variance), 0).mean() + self.input_dim/2*torch.log(2*np.pi*self.variance) + np.log(self.group.order)
+			if self.full_cov:
+				L = torch.linalg.cholesky(self.variance)
+				GX_centered = self.GX-self.mean.unsqueeze(0).unsqueeze(0)
+				L_invGX_centered = torch.triangular_solve(GX_centered.unsqueeze(-1), L.unsqueeze(0).unsqueeze(0), upper=False)[0].squeeze(-1)
+				return -torch.logsumexp(-torch.einsum("ijk,ijk->ij", L_invGX_centered, L_invGX_centered)/2, 0).mean() + torch.log(torch.diagonal(L)).sum() + self.input_dim/2*np.log(2*np.pi) + np.log(self.group.order)
+			else:
+				return -torch.logsumexp(-(self.GX - self.mean.unsqueeze(0).unsqueeze(0)).pow(2).sum(-1)/(2*self.variance), 0).mean() + self.input_dim/2*torch.log(2*np.pi*self.variance) + np.log(self.group.order)
 
 
 class Encoder(nn.Module):

@@ -113,7 +113,12 @@ class GMM(object):
 		print("---")
 
 	def get_params(self):
-		return self.model.mean.data.numpy(), self.model.variance.item()
+		if self.model.full_cov:
+			with torch.no_grad():
+				eigs, _ = torch.linalg.eigh(self.model.variance)
+			return self.model.mean.data.numpy(), self.model.variance.data.numpy(), eigs.data.numpy()
+		else:
+			return self.model.mean.data.numpy(), self.model.variance.item(), np.array([self.model.variance.item()]*self.model.input_dim)
 
 	def save_model(self, filename):
 		torch.save(self.model.state_dict(), filename)

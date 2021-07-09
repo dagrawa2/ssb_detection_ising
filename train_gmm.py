@@ -18,6 +18,7 @@ parser.add_argument('--data', '-d', required=True, type=str, help='Data file.')
 # optimization hyperparameters
 parser.add_argument('--epochs','-e', default=100, type=int, help='Number of epochs for training.')
 # misc
+parser.add_argument('--full_cov', '-fc', action="store_true", help='Use full covariance matrix instead of scalar variance.')
 parser.add_argument('--device', '-dv', default="cpu", type=str, help='Device.')
 parser.add_argument('--results_dir', '-rd', default="default", type=str, help='Results directory.')
 args=parser.parse_args()
@@ -35,7 +36,7 @@ X = torch.as_tensor(np.load(args.data))
 
 # build model
 group = pf.models.Group(2, [[(0, 1)]])
-model = pf.models.GMM(2, group)
+model = pf.models.GMM(2, group, full_cov=args.full_cov)
 model.initialize(X)
 
 # create model trainer and callbacks
@@ -46,9 +47,9 @@ callbacks = [pf.callbacks.Training()]
 trainer.fit(callbacks)
 
 # get trained parameters
-mean, variance = trainer.get_params()
+mean, variance, variance_eigs = trainer.get_params()
 print("mean:", np.round(mean, 3))
-print("variance:", np.round(variance, 3))
+print("variance_eigs:", np.round(variance_eigs, 3))
 
 # function to convert np array to list of python numbers
 ndarray2list = lambda arr, dtype: [getattr(__builtins__, dtype)(x) for x in arr]
@@ -67,7 +68,8 @@ results_dict = {
 	"train": {key: ndarray2list(value, "float") for cb in callbacks for (key, value) in cb.history.items()}, 
 	"params": {
 		"mean": ndarray2list(mean, "float"), 
-		"variance": float(variance)
+#		"variance": float(variance)
+		"variance_eigs": ndarray2list(variance_eigs, "float")
 	}
 }
 
