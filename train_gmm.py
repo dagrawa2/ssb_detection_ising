@@ -83,7 +83,7 @@ results_dict["time"] = time.time()-time_start
 print("Saving results ...")
 with open(os.path.join(results_dir, "results.json"), "w") as fp:
 	json.dump(results_dict, fp, indent=2)
-trainer.save_model(os.path.join(results_dir, "params.pth"))
-
+#trainer.save_model(os.path.join(results_dir, "params.pth"))
+np.savez(os.path.join(results_dir, "params.npz"), mean=mean, variance=variance)
 
 print("Done!")
