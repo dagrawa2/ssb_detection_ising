@@ -27,21 +27,21 @@ class Group(object):
 
 class GMM(nn.Module):
 
-	def __init__(self, input_dim, group, full_cov=False, epsilon=1e-6):
+	def __init__(self, input_dim, group, full_cov=False, jitter=1e-6):
 		super(GMM, self).__init__()
 		self.input_dim = input_dim
 		self.group = group
 		self.full_cov = full_cov
-		self.epsilon = epsilon
+		self.jitter = jitter
 
 	def initialize(self, X):
 		with torch.no_grad():
 			self.mean = X.mean(0)
 			if self.full_cov:
 				X_centered = X-self.mean.unsqueeze(0)
-				self.variance = torch.einsum("ni,nj->ij", X_centered, X_centered)/X.size(0) + self.epsilon*torch.eye(self.input_dim)
+				self.variance = torch.einsum("ni,nj->ij", X_centered, X_centered)/X.size(0) + self.jitter*torch.eye(self.input_dim)
 			else:
-				self.variance = (X - self.mean.unsqueeze(0)).pow(2).sum()/X.size(0) + self.epsilon
+				self.variance = (X - self.mean.unsqueeze(0)).pow(2).sum()/X.size(0) + self.jitter
 				self.second_moment = X.pow(2).sum()/X.size(0)
 			self.GX = self.group.orbit(X)
 
@@ -54,11 +54,11 @@ class GMM(nn.Module):
 				weights = torch.exp( -torch.einsum("ijk,ijk->ij", L_invGX_centered, L_invGX_centered)/2 )
 				weights = weights/weights.sum(0, keepdim=True)
 				self.mean = ( (self.GX*weights.unsqueeze(-1)).sum(0)).mean(0)
-				self.variance = ( (torch.einsum("ijk,ijl->ijkl", GX_centered, GX_centered)*weights.unsqueeze(-1).unsqueeze(-1)).sum(0)).mean(0) + self.epsilon*torch.eye(self.input_dim)
+				self.variance = ( (torch.einsum("ijk,ijl->ijkl", GX_centered, GX_centered)*weights.unsqueeze(-1).unsqueeze(-1)).sum(0)).mean(0) + self.jitter*torch.eye(self.input_dim)
 			else:
 				weights = torch.exp( torch.einsum("gij,j->gi", self.GX, self.mean)/self.variance )
 				mean_new = ( (self.GX*weights.unsqueeze(-1)).sum(0)/weights.unsqueeze(-1).sum(0) ).mean(0)
-				self.variance = ( self.second_moment - 2*self.mean.dot(mean_new) + self.mean.pow(2).sum() )/self.input_dim + self.epsilon
+				self.variance = ( self.second_moment - 2*self.mean.dot(mean_new) + self.mean.pow(2).sum() )/self.input_dim + self.jitter
 				self.mean = mean_new
 
 	def loss(self):

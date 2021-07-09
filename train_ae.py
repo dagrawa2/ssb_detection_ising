@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-import phasefinder2 as pf
+import phasefinder as pf
 
 # command-line arguments
 parser=argparse.ArgumentParser()

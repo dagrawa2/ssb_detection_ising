@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-import phasefinder2 as pf
+import phasefinder as pf
 
 # command-line arguments
 parser=argparse.ArgumentParser()
@@ -17,8 +17,10 @@ parser=argparse.ArgumentParser()
 parser.add_argument('--data', '-d', required=True, type=str, help='Data file.')
 # optimization hyperparameters
 parser.add_argument('--epochs','-e', default=100, type=int, help='Number of epochs for training.')
-# misc
+# covariance settings
 parser.add_argument('--full_cov', '-fc', action="store_true", help='Use full covariance matrix instead of scalar variance.')
+parser.add_argument('--jitter','-j', default=1e-6, type=float, help='Jitter added to variance.')
+# misc
 parser.add_argument('--device', '-dv', default="cpu", type=str, help='Device.')
 parser.add_argument('--results_dir', '-rd', default="default", type=str, help='Results directory.')
 args=parser.parse_args()
@@ -32,11 +34,11 @@ torch.manual_seed(2)
 time_start = time.time()
 
 # load data
-X = torch.as_tensor(np.load(args.data))
+X = torch.as_tensor(np.load(args.data), dtype=torch.double)
 
 # build model
 group = pf.models.Group(2, [[(0, 1)]])
-model = pf.models.GMM(2, group, full_cov=args.full_cov)
+model = pf.models.GMM(2, group, full_cov=args.full_cov, jitter=args.jitter)
 model.initialize(X)
 
 # create model trainer and callbacks
