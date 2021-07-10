@@ -89,7 +89,7 @@ class Encoder(nn.Module):
 		out_conv = self.conv(X)
 		out_1 = self.linear(self.activation( self.pool(out_conv).squeeze(-1).squeeze(-1) ))
 		out_2 = self.linear(self.activation( self.pool(-out_conv).squeeze(-1).squeeze(-1) ))
-		return torch.cat([out_1, -out_2], 1)
+		return torch.cat([out_1, out_2], 1)
 
 
 class Decoder(nn.Module):
