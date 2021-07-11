@@ -33,8 +33,8 @@ int wrap_int(int a, int b) {
 
 
 int main(int argc, char *argv[]) {
-	int l=20;
-	int n_sweeps=10000000;
+	int l=16;
+	int n_sweeps=20005000;
 	int meas_interval=500;
 	int burnin=5000;
 	double T=1.0;

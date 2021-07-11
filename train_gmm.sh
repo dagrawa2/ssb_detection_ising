@@ -1,10 +1,15 @@
 #!/usr/bin/bash
 set -e
 
-temperature=T2
+temperatures="0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0"
 
-python train_gmm.py \
-	--data=results_ae/encodings/$temperature.npy \
-	--epochs=10 \
-	--results_dir=results_gmm/$temperature \
-	--device=cpu \
+for temperature in $temperatures
+do
+	python train_gmm.py \
+		--data=results/AE/encodings/T$temperature.npy \
+		--epochs=5 \
+		--results_dir=results/GMM/T$temperature \
+		--device=cpu \
+		--jitter=1e-4 \
+		--full_cov
+done
