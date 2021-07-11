@@ -40,6 +40,8 @@ class GMM(nn.Module):
 			if self.full_cov:
 				X_centered = X-self.mean.unsqueeze(0)
 				self.variance = torch.einsum("ni,nj->ij", X_centered, X_centered)/X.size(0) + self.jitter*torch.eye(self.input_dim)
+				eigs, vecs = torch.linalg.eigh(self.variance)
+				self.mean = 2*torch.sqrt(eigs[-1])*vecs[:,-1]
 			else:
 				self.variance = (X - self.mean.unsqueeze(0)).pow(2).sum()/X.size(0) + self.jitter
 				self.second_moment = X.pow(2).sum()/X.size(0)
@@ -51,8 +53,7 @@ class GMM(nn.Module):
 				L = torch.linalg.cholesky(self.variance)
 				GX_centered = self.GX-self.mean.unsqueeze(0).unsqueeze(0)
 				L_invGX_centered = torch.triangular_solve(GX_centered.unsqueeze(-1), L.unsqueeze(0).unsqueeze(0), upper=False)[0].squeeze(-1)
-				weights = torch.exp( -torch.einsum("ijk,ijk->ij", L_invGX_centered, L_invGX_centered)/2 )
-				weights = weights/weights.sum(0, keepdim=True)
+				weights = F.softmax( -torch.einsum("ijk,ijk->ij", L_invGX_centered, L_invGX_centered)/2, dim=0 )
 				self.mean = ( (self.GX*weights.unsqueeze(-1)).sum(0)).mean(0)
 				self.variance = ( (torch.einsum("ijk,ijl->ijkl", GX_centered, GX_centered)*weights.unsqueeze(-1).unsqueeze(-1)).sum(0)).mean(0) + self.jitter*torch.eye(self.input_dim)
 			else:
