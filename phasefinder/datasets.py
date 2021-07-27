@@ -64,10 +64,13 @@ class Ising(object):
 		states = states.reshape((-1, *dimensions))
 		return states
 
-	def load_M(self, data_dir):
+	def load_M(self, data_dir, per_spin=False):
 		self.load_args(data_dir)
+		Ms = pd.read_csv(os.path.join(data_dir, "EMR.csv"))["M"].values
+		if per_spin:
+			Ms = Ms/self.L**2
 
-		return pd.read_csv(os.path.join(data_dir, "EMR.csv"))["M"].values
+		return Ms
 
 	@staticmethod
 	def jackknife(samples, func):

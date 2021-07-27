@@ -11,12 +11,17 @@ from phasefinder.datasets import Ising
 
 
 def plot(results_dir):
+	bins = 50
 	temperatures = []
+	distributions = []
 	order_means, order_stds = [], []
 	binder_means, binder_stds = [], []
 	for temperature_dir in sorted(os.listdir(results_dir)):
 		I = Ising()
-		Ms = I.load_M(os.path.join(results_dir, temperature_dir))
+		Ms = I.load_M(os.path.join(results_dir, temperature_dir), per_spin=True)
+		hist, bin_edges = np.histogram(Ms, bins=bins, range=(-1, 1), density=False)
+		hist = hist/len(Ms)
+		distributions.append(hist)
 		order_mean, order_std = I.jackknife(Ms, lambda x: np.mean(np.abs(x)))
 		order_means.append(order_mean)
 		order_stds.append(order_std)
@@ -26,10 +31,24 @@ def plot(results_dir):
 		temperatures.append(I.T)
 	L = I.L
 	temperatures = np.array(temperatures)
+	distributions = np.stack(distributions, axis=1)
 	order_means = np.array(order_means)
 	order_stds = np.array(order_stds)
 	binder_means = np.array(binder_means)
 	binder_stds = np.array(binder_stds)
+	# distributions
+	plt.figure()
+	plt.imshow(distributions, cmap="gray", vmin=0, vmax=1)
+	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="blue", linestyle="dashed")
+	plt.yticks(np.flip(np.arange(bins+1)-0.5), bin_edges)
+	plt.xlabel(r"$T$", fontsize=12)
+	plt.ylabel(r"$M$", fontsize=12)
+	plt.title(r"$L="+str(int(L))+r"$", fontsize=16)
+	plt.tight_layout()
+	plots_dir = "plots/L{:d}".format(L)
+	os.makedirs(plots_dir, exist_ok=True)
+	plt.savefig(os.path.join(plots_dir, "distribution.png"))
+	plt.close()
 	# order parameter
 	plt.figure()
 	plt.plot(temperatures, order_means, color="black")
@@ -38,10 +57,9 @@ def plot(results_dir):
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="blue", linestyle="dashed")
 	plt.xlabel(r"$T$", fontsize=12)
 	plt.ylabel(r"$\langle |M|\rangle$", fontsize=12)
+	plt.ylim(0, 1)
 	plt.title(r"$L="+str(int(L))+r"$", fontsize=16)
 	plt.tight_layout()
-	plots_dir = "plots/L{:d}".format(L)
-	os.makedirs(plots_dir, exist_ok=True)
 	plt.savefig(os.path.join(plots_dir, "order.png"))
 	plt.close()
 	# binder cumulant
@@ -52,6 +70,7 @@ def plot(results_dir):
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="blue", linestyle="dashed")
 	plt.xlabel(r"$T$", fontsize=12)
 	plt.ylabel(r"$U_4$", fontsize=12)
+	plt.ylim(-0.1, 0.7)
 	plt.title(r"$L="+str(int(L))+r"$", fontsize=16)
 	plt.tight_layout()
 	os.makedirs(plots_dir, exist_ok=True)
