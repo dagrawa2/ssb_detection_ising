@@ -18,6 +18,10 @@ parser=argparse.ArgumentParser()
 # datasets
 parser.add_argument('--data_dir', '-d', required=True, type=str, help='Master directory of the data.')
 parser.add_argument('--L','-l', required=True, type=int, help='Linear size of lattice.')
+# network architecture
+parser.add_argument('--encoder_hidden', '-eh', default=4, type=int, help='Hidden neurons in the encoder.')
+parser.add_argument('--decoder_hidden', '-dh', default=64, type=int, help='Hidden neurons in the decoder.')
+parser.add_argument('--symmetric', '-s', action="store_true", help='Enforce symmetries resulting from latent dimension.')
 # SGD hyperparameters
 parser.add_argument('--batch_size', '-b', default=128, type=int, help='Minibatch size.')
 parser.add_argument('--epochs', '-e', default=100, type=int, help='Number of epochs for training.')
@@ -52,7 +56,7 @@ X = []
 T = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L)))):
 	I = pf.datasets.Ising()
-	X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_train_val, dtype=np.float32, flatten=True) )
+	X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_train_val, dtype=np.float32, flatten=not args.symmetric, channel_dim=args.symmetric) )
 	T.append( np.full((args.n_train_val, 1), I.T, dtype=np.float32) )
 X = np.concatenate(X, 0)
 T = np.concatenate(T, 0)
@@ -62,10 +66,10 @@ train_loader = DataLoader(TensorDataset(torch.as_tensor(X_train), torch.as_tenso
 val_loader = DataLoader(TensorDataset(torch.as_tensor(X_val), torch.as_tensor(T_val)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
 
 # build model
-input_dim = I.L**I.d
+input_dim = [I.L]*I.d if args.symmetric else I.L**I.d
 latent_dim = 1
-encoder = pf.models.Encoder(input_dim, 4, latent_dim)
-decoder = pf.models.Decoder(latent_dim, 64, input_dim)
+encoder = pf.models.Encoder(input_dim, args.encoder_hidden, latent_dim, symmetric=args.symmetric)
+decoder = pf.models.Decoder(latent_dim, args.decoder_hidden, input_dim, symmetric=args.symmetric)
 
 # create trainer and callbacks
 trainer = pf.trainers.Autoencoder(encoder, decoder, epochs=args.epochs, lr=args.lr, device=args.device)
@@ -82,7 +86,7 @@ temperatures = []
 measurements = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L)))):
 	I = pf.datasets.Ising()
-	X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_test, dtype=np.float32, flatten=True)
+	X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_test, dtype=np.float32, flatten=not args.symmetric, channel_dim=args.symmetric)
 	T = np.full((args.n_test, 1), I.T, dtype=np.float32)
 	test_loader = DataLoader(TensorDataset(torch.as_tensor(X), torch.as_tensor(T)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
 	encodings = trainer.encode(test_loader)
@@ -92,6 +96,25 @@ for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".for
 temperatures = np.array(temperatures)
 measurements = np.stack(measurements, 0)
 np.savez(os.path.join(results_dir, "measurements.npz"), temperatures=temperatures, measurements=measurements)
+
+# generate encodings of symmetry-transformed inputs
+if args.symmetric:
+	del test_loader; gc.collect()
+	G = list( pf.groups.generate_group() )
+	group_elements = np.array([g.value for g in G])
+	symmetry_scores = []
+	for j, temperature_dir in enumerate(sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L))))):
+		I = pf.datasets.Ising()
+		X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_test, dtype=np.float32, flatten=not args.symmetric, channel_dim=args.symmetric)
+		T = np.full((args.n_test, 1), I.T, dtype=np.float32)
+		mmds = []
+		for g in G:
+			test_loader = DataLoader(TensorDataset(torch.as_tensor(g.action(X).copy()), torch.as_tensor(T)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
+			encodings_transformed = trainer.encode(test_loader).squeeze(-1)
+			mmds.append( np.mean((measurements[j]-encodings_transformed)**2) )
+		symmetry_scores.append(mmds)
+	symmetry_scores = np.stack(symmetry_scores, 0)
+	np.savez(os.path.join(results_dir, "symmetry_scores.npz"), temperatures=temperatures, group_elements=group_elements, symmetry_scores=symmetry_scores)
 
 # function to convert np array to list of python numbers
 ndarray2list = lambda arr, dtype: [getattr(__builtins__, dtype)(x) for x in arr]

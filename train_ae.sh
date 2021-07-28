@@ -17,8 +17,9 @@ do
 		--val_batch_size=512 \
 		--val_interval=1 \
 		--results_dir=results \
-		--observable_name=latent \
+		--observable_name=latent_symmetric \
 		--device=cpu \
+		--symmetric
 done
 
 echo All done!

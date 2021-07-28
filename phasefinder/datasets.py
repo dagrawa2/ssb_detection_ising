@@ -50,7 +50,7 @@ class Ising(object):
 		self.dynamic = args["dyn"]
 		self.seed = args["s"]
 
-	def load_states(self, data_dir, decode=False, n_samples=None, dtype=None, flatten=False):
+	def load_states(self, data_dir, decode=False, n_samples=None, dtype=None, flatten=False, channel_dim=False):
 		self.load_args(data_dir)
 
 		filename = "states.enc" if decode else "states.txt"
@@ -60,11 +60,14 @@ class Ising(object):
 			states = compressor.decode(states)
 
 		states = 2*np.array([char for char in states], dtype=int)-1
+		assert not (flatten and channel_dim), "Cannot add channel dimension if also flattening."
 		if flatten:
 			dimension = self.L**self.d
 			states = states.reshape((-1, dimension))
 		else:
 			dimensions = [self.L]*self.d
+			if channel_dim:
+				dimensions = [1] + dimensions
 			states = states.reshape((-1, *dimensions))
 
 		if n_samples is not None:
