@@ -52,19 +52,20 @@ X = []
 T = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L)))):
 	I = pf.datasets.Ising()
-	X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_train_val) )
-	T.append( np.full((args.n_train_val, 1), I.T) )
-dimension = I.L**I.d
-X = np.concatenate(X, 0).astype(np.float32).reshape((-1, dimension))
-T = np.concatenate(T, 0).astype(np.float32)
+	X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_train_val, dtype=np.float32, flatten=True) )
+	T.append( np.full((args.n_train_val, 1), I.T, dtype=np.float32) )
+X = np.concatenate(X, 0)
+T = np.concatenate(T, 0)
 X_train, X_val, T_train, T_val = train_test_split(X, T, stratify=T, test_size=args.val_size)
+del X; del T; gc.collect()
 train_loader = DataLoader(TensorDataset(torch.as_tensor(X_train), torch.as_tensor(T_train)), batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=8)
 val_loader = DataLoader(TensorDataset(torch.as_tensor(X_val), torch.as_tensor(T_val)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
 
 # build model
-latent_dimension = 1
-encoder = pf.models.Encoder(dimension, 4, latent_dimension)
-decoder = pf.models.Decoder(latent_dimension, 64, dimension)
+input_dim = I.L**I.d
+latent_dim = 1
+encoder = pf.models.Encoder(input_dim, 4, latent_dim)
+decoder = pf.models.Decoder(latent_dim, 64, input_dim)
 
 # create trainer and callbacks
 trainer = pf.trainers.Autoencoder(encoder, decoder, epochs=args.epochs, lr=args.lr, device=args.device)
@@ -76,15 +77,13 @@ if args.val_interval > 0:
 trainer.fit(train_loader, callbacks)
 
 # generate encodings
-del train_loader
-del val_loader
-gc.collect()
+del train_loader; del val_loader; gc.collect()
 temperatures = []
 measurements = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L)))):
 	I = pf.datasets.Ising()
-	X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_test).astype(np.float32).reshape((-1, dimension))
-	T = np.full((args.n_test, 1), I.T).astype(np.float32)
+	X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_test, dtype=np.float32, flatten=True)
+	T = np.full((args.n_test, 1), I.T, dtype=np.float32)
 	test_loader = DataLoader(TensorDataset(torch.as_tensor(X), torch.as_tensor(T)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
 	encodings = trainer.encode(test_loader)
 	assert encodings.shape[1] == 1, "This script currently only supports 1D encodings."
