@@ -99,12 +99,15 @@ def plot(results_dir, observable_name, L):
 if __name__ == "__main__":
 	Ls = [16, 32, 64, 128]
 
-	for L in Ls:
+#	for L in Ls:
 #		print("Gathering magnetizations for L={:d} . . . ".format(L))
 #		gather_Ms("data", L)
-#		print("Calculating stats for L={:d} . . . ".format(L))
-#		calculate_stats("results", "magnetization", L)
+
+	observable_name = "latent"
+	for L in Ls:
+		print("Calculating stats for L={:d} . . . ".format(L))
+		calculate_stats("results", observable_name, L)
 		print("Plotting L={:d} . . . ".format(L))
-		plot("results", "magnetization", L)
+		plot("results", observable_name, L)
 
 	print("Done!")
