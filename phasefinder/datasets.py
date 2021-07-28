@@ -50,7 +50,7 @@ class Ising(object):
 		self.dynamic = args["dyn"]
 		self.seed = args["s"]
 
-	def load_states(self, data_dir, decode=False):
+	def load_states(self, data_dir, decode=False, n_samples=None):
 		self.load_args(data_dir)
 
 		filename = "states.enc" if decode else "states.txt"
@@ -62,6 +62,11 @@ class Ising(object):
 		states = 2*np.array([char for char in states], dtype=int)-1
 		dimensions = [self.L]*self.d
 		states = states.reshape((-1, *dimensions))
+
+		if n_samples is not None:
+			assert n_samples <= states.shape[0], "There are only {:d} samples in the dataset.".format(states.shape[0])
+			states = states[-n_samples:]
+
 		return states
 
 	def load_M(self, data_dir, per_spin=False):

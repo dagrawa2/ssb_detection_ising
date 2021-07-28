@@ -6,19 +6,17 @@ from torch.nn import functional as F
 
 class Autoencoder(object):
 
-	def __init__(self, encoder, decoders, epochs=1, lr=1e-3, device="cpu"):
+	def __init__(self, encoder, decoder, epochs=1, lr=1e-3, device="cpu"):
 		self.encoder = encoder.to(device)
-		self.decoders = [decoder.to(device) for decoder in decoders]
+		self.decoder = decoder.to(device)
 		self.epochs = epochs
 		self.lr = lr
 		self.device = device
 
-		parameters = list(self.encoder.parameters())
-		for decoder in self.decoders:
-			parameters += list(decoder.parameters())
+		parameters = list(self.encoder.parameters()) + list(decoder.parameters())
 		self.optimizer = optim.Adam(parameters, lr=self.lr)
 
-	def fit(self, train_loaders, callbacks):
+	def fit(self, train_loader, callbacks):
 		# callbacks before training
 		callbacks = callbacks if isinstance(callbacks, list) else [callbacks]
 		for cb in callbacks:
@@ -30,12 +28,11 @@ class Autoencoder(object):
 			for cb in callbacks:
 				cb.start_of_epoch(epoch)
 			batch_logs = {"loss": []}
-			for batches in zip(*train_loaders):
-				loss = 0
-				for ((X_batch, ), decoder) in zip(batches, self.decoders):
-					X_batch = X_batch.to(self.device)
-					logits = decoder(self.encoder(X_batch))
-					loss += F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2)
+			for (X_batch, T_batch) in train_loader:
+				X_batch = X_batch.to(self.device)
+				T_batch = T_batch.to(self.device)
+				logits = self.decoder(self.encoder(X_batch), T_batch)
+				loss = F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2)
 				loss.backward()
 				self.optimizer.step()
 				self.optimizer.zero_grad()
@@ -50,15 +47,14 @@ class Autoencoder(object):
 		print("---")
 
 
-	def evaluate(self, val_loaders):
+	def evaluate(self, val_loader):
 		losses = []
 		with torch.no_grad():
-			for batches in zip(*val_loaders):
-				loss = 0
-				for ((X_batch, ), decoder) in zip(batches, self.decoders):
-					X_batch = X_batch.to(self.device)
-					logits = decoder(self.encoder(X_batch))
-					loss += F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2)
+			for (X_batch, T_batch) in val_loader:
+				X_batch = X_batch.to(self.device)
+				T_batch = T_batch.to(self.device)
+				logits = self.decoder(self.encoder(X_batch), T_batch)
+				loss = F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2)
 				losses.append(loss.item())
 		loss = np.mean(np.array(losses))
 
@@ -67,7 +63,7 @@ class Autoencoder(object):
 	def encode(self, val_loader):
 		encodings = []
 		with torch.no_grad():
-			for (X_batch, ) in val_loader:
+			for (X_batch, _) in val_loader:
 				X_batch = X_batch.to(self.device)
 				encodings_batch = self.encoder(X_batch)
 				encodings.append( encodings_batch.cpu().numpy() )
@@ -75,53 +71,14 @@ class Autoencoder(object):
 
 		return encodings
 
-	def save_model(self, filename):
-		torch.save(self.model.state_dict(), filename)
+	def save_encoder(self, filename):
+		torch.save(self.encoder.state_dict(), filename)
 
-	def load_model(self, filename):
-		self.model.load_state_dict(torch.load(filename))
+	def save_decoder(self, filename):
+		torch.save(self.decoder.state_dict(), filename)
 
+	def load_encoder(self, filename):
+		self.encoder.load_state_dict(torch.load(filename))
 
-class GMM(object):
-
-	def __init__(self, model, epochs=1, device="cpu"):
-		self.model = model.to(device)
-		self.epochs = epochs
-		self.device = device
-
-	def fit(self, callbacks):
-		# callbacks before training
-		callbacks = callbacks if isinstance(callbacks, list) else [callbacks]
-		for cb in callbacks:
-			cb.start_of_training()
-		print("Training model ...")
-		print("---")
-		for epoch in range(self.epochs):
-			# callbacks at the start of the epoch
-			for cb in callbacks:
-				cb.start_of_epoch(epoch)
-			self.model.update()
-			loss = self.model.loss()
-			batch_logs = {"loss": [loss.item()]}
-			# callbacks at the end of the epoch
-			for cb in callbacks:
-				cb.end_of_epoch(epoch, batch_logs)
-
-		# callbacks at the end of training
-		for cb in callbacks:
-			cb.end_of_training()
-		print("---")
-
-	def get_params(self):
-		if self.model.full_cov:
-			with torch.no_grad():
-				eigs, _ = torch.linalg.eigh(self.model.variance)
-			return self.model.mean.data.numpy(), self.model.variance.data.numpy(), eigs.data.numpy()
-		else:
-			return self.model.mean.data.numpy(), self.model.variance.item(), np.array([self.model.variance.item()]*self.model.input_dim)
-
-	def save_model(self, filename):
-		torch.save(self.model.state_dict(), filename)
-
-	def load_model(self, filename):
-		self.model.load_state_dict(torch.load(filename))
+	def load_decoder(self, filename):
+		self.decoder.load_state_dict(torch.load(filename))

@@ -64,18 +64,18 @@ class Training(Callback):
 class Validation(Callback):
 	"""Monitor metrics on validation set."""
 
-	def __init__(self, trainer, val_loaders, epoch_interval=10):
+	def __init__(self, trainer, val_loader, epoch_interval=10):
 		"""Args:
 			trainer: trainer.Trainer object, 
 				used to access trainer and model methods and parameters.
-			val_loaders: List of DataLoader objects,
-				Validation data loaders.
+			val_loader: DataLoader object,
+				Validation data loader.
 			epoch_interval: Int, 
 				Interval between epochs when validation metrics should be calculated.
 		"""
 		super(Validation, self).__init__()
 		self.trainer = trainer
-		self.val_loaders = val_loaders
+		self.val_loader = val_loader
 		self.epoch_interval = epoch_interval
 		self.history = {"val_epoch": [], "val_loss": []}
 
@@ -83,7 +83,7 @@ class Validation(Callback):
 		if (epoch+1)%self.epoch_interval != 0:
 			pass
 		else:
-			loss = self.trainer.evaluate(self.val_loaders)
+			loss = self.trainer.evaluate(self.val_loader)
 			self.history["val_epoch"].append(epoch)
 			self.history["val_loss"].append(loss)
 			print(". . . val loss {:.3f}".format(loss))
