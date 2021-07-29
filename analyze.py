@@ -30,10 +30,11 @@ def calculate_stats(results_dir, observable_name, L, bins=50):
 	temperatures = data["temperatures"]
 	measurements = data["measurements"]
 	distributions = []
+	distribution_range = ( round(measurements.min()), round(measurements.max()) )
 	order_means, order_stds = [], []
 	binder_means, binder_stds = [], []
 	for i in range(measurements.shape[0]):
-		hist, bin_edges = np.histogram(measurements[i], bins=bins, range=(-1, 1), density=False)
+		hist, _ = np.histogram(measurements[i], bins=bins, range=distribution_range, density=False)
 		hist = hist/measurements.shape[1]
 		distributions.append(hist)
 		order_mean, order_std = Ising().jackknife(measurements[i], lambda x: np.mean(np.abs(x)))
@@ -47,17 +48,19 @@ def calculate_stats(results_dir, observable_name, L, bins=50):
 	order_stds = np.array(order_stds)
 	binder_means = np.array(binder_means)
 	binder_stds = np.array(binder_stds)
-	np.savez(os.path.join(results_dir, observable_name, "L{:d}".format(L), "stats.npz"), distributions=distributions, order_means=order_means, order_stds=order_stds, binder_means=binder_means, binder_stds=binder_stds)
+	distribution_range = np.array(list(distribution_range))
+	np.savez(os.path.join(results_dir, observable_name, "L{:d}".format(L), "stats.npz"), distributions=distributions, distribution_range=distribution_range, order_means=order_means, order_stds=order_stds, binder_means=binder_means, binder_stds=binder_stds)
 
 def plot(results_dir, observable_name, L):
 	temperatures = np.load(os.path.join(results_dir, observable_name, "L{:d}".format(L), "measurements.npz"))["temperatures"]
 	stats = np.load(os.path.join(results_dir, observable_name, "L{:d}".format(L), "stats.npz"))
 	distributions = stats["distributions"]
+	distribution_range = stats["distribution_range"].tolist() if "distribution_range" in stats.keys() else [-1, 1]
 	order_means, order_stds = stats["order_means"], stats["order_stds"]
 	binder_means, binder_stds = stats["binder_means"], stats["binder_stds"]
 	# distributions
 	plt.figure()
-	plt.imshow(np.flip(distributions.T, 0), cmap="gray_r", vmin=0, vmax=1, extent=(temperatures.min(), temperatures.max(), -1, 1), aspect="auto")
+	plt.imshow(np.flip(distributions.T, 0), cmap="gray_r", vmin=0, vmax=1, extent=(temperatures.min(), temperatures.max(), *distribution_range), aspect="auto")
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="blue", linestyle="dashed")
 	plt.xlabel(r"$T$", fontsize=12)
 	plt.ylabel(r"$M$", fontsize=12)
@@ -75,7 +78,7 @@ def plot(results_dir, observable_name, L):
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="blue", linestyle="dashed")
 	plt.xlabel(r"$T$", fontsize=12)
 	plt.ylabel(r"$\langle |M|\rangle$", fontsize=12)
-	plt.ylim(0, 1)
+	plt.ylim(0, max(distribution_range))
 	plt.title(r"$L="+str(int(L))+r"$", fontsize=16)
 	plt.tight_layout()
 	plt.savefig(os.path.join(plots_dir, "order.png"))
