@@ -35,8 +35,17 @@ class Element(object):
 	def __mul__(self, other):
 		a_1, a_2 = self.tau(other.a_1, other.a_2, self.q)
 		a_1, a_2 = self.rho(a_1, a_2, self.m)
-		m = other.m if self.q==0 else self.rotation_order-other.m
+		m = other.m if self.q==0 else -other.m
 		return Element((self.a_1+a_1)%self.translation_order, (self.a_2+a_2)%self.translation_order, (self.m+m)%self.rotation_order, (self.q+other.q)%2, (self.s+other.s)%2, rotation_order=self.rotation_order, translation_order=self.translation_order)
+
+	def inverse(self):
+		a_1, a_2 = self.tau(self.a_1, self.a_2, self.q)
+		a_1, a_2 = self.rho(a_1, a_2, self.m)
+		m = -self.m if self.q==0 else self.m
+		return Element((-a_1)%self.translation_order, (-a_2)%self.translation_order, m%self.rotation_order, self.q, self.s)
+
+	def conjugate(self, other):
+		return other.inverse()*self.__mul__(other)
 
 	def action(self, X):
 		if self.s==1:
@@ -72,3 +81,14 @@ def generate_subgroup(generators):
 		else:
 			order = len(G)
 	return G
+
+def generate_normal_subgroup(generators, G):
+	GinvHG = set(generators)
+	if len(GinvHG) == len(G):
+		return GinvHG
+	while True:
+		H = generate_subgroup(GinvHG)
+		GinvHG = H.union( set([g.inverse()*h*g for h in H for g in G-H]) )
+		if len(GinvHG) == len(H):
+			break
+	return H
