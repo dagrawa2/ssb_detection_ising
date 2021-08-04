@@ -5,7 +5,7 @@ Ls="16 32 64 128"
 
 for L in $Ls
 do
-	python train_ae.py \
+	python train.py \
 		--data_dir=data \
 		--L=$L \
 		--n_train_val=2500 \
