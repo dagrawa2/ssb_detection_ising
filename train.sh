@@ -14,12 +14,14 @@ do
 		--epochs=10 \
 		--lr=2e-3 \
 		--val_size=0.5 \
-		--val_batch_size=512 \
+		--val_batch_size=2048 \
 		--val_interval=1 \
 		--results_dir=results \
-		--observable_name=latent_symmetric \
+		--observable_name=latent_equivariant \
 		--device=cpu \
-		--symmetric
+		--symmetric \
+		--equivariance_reg=1.0 \
+		--equivariance_pre=2
 done
 
 echo All done!

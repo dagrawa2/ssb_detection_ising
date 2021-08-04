@@ -26,5 +26,8 @@ for L in Ls:
 			output_dir="data/L{:d}/T{:.2f}".format(L, T), 
 			encode=True)
 
+		I.reduce_checkerboard("data/L{:d}/T{:.2f}".format(L, T), decode=True)
+
+
 print("Done!")
 print("Took {:.3f} seconds.".format(time.time()-time_start))

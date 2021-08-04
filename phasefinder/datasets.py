@@ -38,6 +38,21 @@ class Ising(object):
 		with open(os.path.join(output_dir, "time.txt"), "w") as fp:
 			fp.write("{:f}".format(time.time()-time_start))
 
+	def reduce_checkerboard(self, data_dir, decode=False):
+		states = self.load_states(data_dir, decode=decode)
+		assert self.d == 2, "Checkerboard representation is supported only for dimension d = 2."
+		states_symmetric = 2/self.L**2 * np.roll(states \
+			.reshape((-1, self.L//2, 2, self.L)) \
+			.sum(1) \
+			.reshape((-1, 2, self.L//2, 2)) \
+			.sum(2) \
+			.reshape((-1, 1)), \
+			1, 1) \
+			.reshape((-1, 2, 2)) \
+			.sum(2)
+
+		np.save(os.path.join(data_dir, "states_symmetric.npy"), states_symmetric)
+
 	def load_args(self, data_dir):
 		with open(os.path.join(data_dir, "args.json"), "r") as fp:
 			args = json.load(fp)
@@ -50,25 +65,30 @@ class Ising(object):
 		self.dynamic = args["dyn"]
 		self.seed = args["s"]
 
-	def load_states(self, data_dir, decode=False, n_samples=None, dtype=None, flatten=False, channel_dim=False):
+	def load_states(self, data_dir, decode=False, n_samples=None, dtype=None, flatten=False, channel_dim=False, symmetric=False):
 		self.load_args(data_dir)
 
-		filename = "states.enc" if decode else "states.txt"
-		with open(os.path.join(data_dir, filename), "r") as fp:
-			states = fp.read()
-		if decode:
-			states = compressor.decode(states)
+		if symmetric:
+			states = np.load(os.path.join(data_dir, "states_symmetric.npy"))
 
-		states = 2*np.array([char for char in states], dtype=int)-1
-		assert not (flatten and channel_dim), "Cannot add channel dimension if also flattening."
-		if flatten:
-			dimension = self.L**self.d
-			states = states.reshape((-1, dimension))
 		else:
-			dimensions = [self.L]*self.d
-			if channel_dim:
-				dimensions = [1] + dimensions
-			states = states.reshape((-1, *dimensions))
+
+			filename = "states.enc" if decode else "states.txt"
+			with open(os.path.join(data_dir, filename), "r") as fp:
+				states = fp.read()
+			if decode:
+				states = compressor.decode(states)
+
+			states = 2*np.array([char for char in states], dtype=int)-1
+			assert not (flatten and channel_dim), "Cannot add channel dimension if also flattening."
+			if flatten:
+				dimension = self.L**self.d
+				states = states.reshape((-1, dimension))
+			else:
+				dimensions = [self.L]*self.d
+				if channel_dim:
+					dimensions = [1] + dimensions
+				states = states.reshape((-1, *dimensions))
 
 		if n_samples is not None:
 			assert n_samples <= states.shape[0], "There are only {:d} samples in the dataset.".format(states.shape[0])

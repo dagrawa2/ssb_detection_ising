@@ -24,8 +24,11 @@ parser.add_argument('--decoder_hidden', '-dh', default=64, type=int, help='Hidde
 parser.add_argument('--symmetric', '-s', action="store_true", help='Enforce symmetries resulting from latent dimension.')
 # SGD hyperparameters
 parser.add_argument('--batch_size', '-b', default=128, type=int, help='Minibatch size.')
-parser.add_argument('--epochs', '-e', default=100, type=int, help='Number of epochs for training.')
+parser.add_argument('--epochs', '-e', default=10, type=int, help='Number of epochs for training.')
 parser.add_argument('--lr', '-lr', default=1e-3, type=float, help='Learning rate.')
+# equivariance regularization
+parser.add_argument('--equivariance_reg', '-er', default=0, type=float, help='Coefficient of equivariance-enforcing terms in loss function.')
+parser.add_argument('--equivariance_pre', '-ep', default=0, type=int, help='Number of training epochs ignoring --equivariance_reg.')
 # validation
 parser.add_argument('--n_train_val', '-n', default=2000, type=int, help='Number of training + validation samples.')
 parser.add_argument('--n_test', '-nt', default=2000, type=int, help='Number of test samples.')
@@ -56,7 +59,7 @@ X = []
 T = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L)))):
 	I = pf.datasets.Ising()
-	X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_train_val, dtype=np.float32, flatten=not args.symmetric, channel_dim=args.symmetric) )
+	X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_train_val, dtype=np.float32, flatten=not args.symmetric, symmetric=args.symmetric) )
 	T.append( np.full((args.n_train_val, 1), I.T, dtype=np.float32) )
 X = np.concatenate(X, 0)
 T = np.concatenate(T, 0)
@@ -66,13 +69,13 @@ train_loader = DataLoader(TensorDataset(torch.as_tensor(X_train), torch.as_tenso
 val_loader = DataLoader(TensorDataset(torch.as_tensor(X_val), torch.as_tensor(T_val)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
 
 # build model
-input_dim = [I.L]*I.d if args.symmetric else I.L**I.d
+input_dim = 2 if args.symmetric else I.L**I.d
 latent_dim = 1
-encoder = pf.models.Encoder(input_dim, args.encoder_hidden, latent_dim, symmetric=args.symmetric)
-decoder = pf.models.Decoder(latent_dim, args.decoder_hidden, input_dim, symmetric=args.symmetric)
+encoder = pf.models.MLP(input_dim, args.encoder_hidden, latent_dim)
+decoder = pf.models.MLP(latent_dim+1, args.decoder_hidden, input_dim)
 
 # create trainer and callbacks
-trainer = pf.trainers.Autoencoder(encoder, decoder, epochs=args.epochs, lr=args.lr, device=args.device)
+trainer = pf.trainers.Autoencoder(encoder, decoder, epochs=args.epochs, lr=args.lr, equivariance_reg=args.equivariance_reg, equivariance_pre=args.equivariance_pre, device=args.device)
 callbacks = [pf.callbacks.Training()]
 if args.val_interval > 0:
 	callbacks.append( pf.callbacks.Validation(trainer, val_loader, epoch_interval=args.val_interval) )
@@ -80,13 +83,21 @@ if args.val_interval > 0:
 # train model
 trainer.fit(train_loader, callbacks)
 
+# estimate symmetry generator reps
+if args.equivariance_reg > 0:
+	train_loader = DataLoader(train_loader.dataset, batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
+	flip_rep, neg_rep = trainer.generator_reps(train_loader)
+	generator_reps = {"spatial": float(flip_rep), "internal": float(neg_rep)}
+	with open(os.path.join(results_dir, "generator_reps.json"), "w") as fp:
+		json.dump(generator_reps, fp, indent=2)
+
 # generate encodings
 del train_loader; del val_loader; gc.collect()
 temperatures = []
 measurements = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L)))):
 	I = pf.datasets.Ising()
-	X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_test, dtype=np.float32, flatten=not args.symmetric, channel_dim=args.symmetric)
+	X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_test, dtype=np.float32, flatten=not args.symmetric, symmetric=args.symmetric)
 	T = np.full((args.n_test, 1), I.T, dtype=np.float32)
 	test_loader = DataLoader(TensorDataset(torch.as_tensor(X), torch.as_tensor(T)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
 	encodings = trainer.encode(test_loader)
@@ -96,25 +107,6 @@ for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".for
 temperatures = np.array(temperatures)
 measurements = np.stack(measurements, 0)
 np.savez(os.path.join(results_dir, "measurements.npz"), temperatures=temperatures, measurements=measurements)
-
-# generate encodings of symmetry-transformed inputs
-if args.symmetric:
-	del test_loader; gc.collect()
-	G = list( pf.groups.generate_group() )
-	group_elements = np.array([g.value for g in G])
-	symmetry_scores = []
-	for j, temperature_dir in enumerate(sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L))))):
-		I = pf.datasets.Ising()
-		X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_test, dtype=np.float32, flatten=not args.symmetric, channel_dim=args.symmetric)
-		T = np.full((args.n_test, 1), I.T, dtype=np.float32)
-		mmds = []
-		for g in G:
-			test_loader = DataLoader(TensorDataset(torch.as_tensor(g.action(X).copy()), torch.as_tensor(T)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
-			encodings_transformed = trainer.encode(test_loader).squeeze(-1)
-			mmds.append( np.mean((measurements[j]-encodings_transformed)**2) )
-		symmetry_scores.append(mmds)
-	symmetry_scores = np.stack(symmetry_scores, 0)
-	np.savez(os.path.join(results_dir, "symmetry_scores.npz"), temperatures=temperatures, group_elements=group_elements, symmetry_scores=symmetry_scores)
 
 # function to convert np array to list of python numbers
 ndarray2list = lambda arr, dtype: [getattr(__builtins__, dtype)(x) for x in arr]
