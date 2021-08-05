@@ -3,6 +3,7 @@ import json
 import time
 import numpy as np
 import pandas as pd
+from scipy.linalg import circulant
 
 from . import compressor
 
@@ -109,6 +110,7 @@ class Ising(object):
 
 	@staticmethod
 	def jackknife(samples, func):
-		mean = func(samples)
-		std = np.array([func(np.delete(samples, i)) for i in range(len(samples))]).std()
-		return mean, std
+		estimate = func(samples.reshape((1, -1)))
+		jk_estimates = func(np.flip(circulant(np.flip(samples)).T, 1)[:,1:])
+		error = np.sqrt(np.sum((jk_estimates-estimate)**2))
+		return estimate, error

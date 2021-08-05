@@ -40,10 +40,10 @@ def calculate_stats(results_dir, observable_name, L, bins=50):
 		hist, _ = np.histogram(measurements[i], bins=bins, range=distribution_range, density=False)
 		hist = hist/measurements.shape[1]
 		distributions.append(hist)
-		order_mean, order_std = Ising().jackknife(measurements[i], lambda x: np.mean(np.abs(x)))
+		order_mean, order_std = Ising().jackknife(measurements[i], lambda x: np.mean(np.abs(x), 1))
 		order_means.append(order_mean)
 		order_stds.append(order_std)
-		binder_mean, binder_std = Ising().jackknife(measurements[i], lambda x: 1 - np.mean(x**4)/(3*np.mean(x**2)**2))
+		binder_mean, binder_std = Ising().jackknife(measurements[i], lambda x: 1 - np.mean(x**4, 1)/(3*np.mean(x**2, 1)**2))
 		binder_means.append(binder_mean)
 		binder_stds.append(binder_std)
 	distributions = np.stack(distributions, 0)
@@ -156,20 +156,17 @@ def plot_symmetry_scores(results_dir, observable_name, L):
 
 if __name__ == "__main__":
 	Ls = [16, 32, 64, 128]
+	observable_names = ["magnetization", "latent", "latent_equivariant"]
 
 #	for L in Ls:
 #		print("Gathering magnetizations for L={:d} . . . ".format(L))
 #		gather_Ms("data", L)
 
-	observable_name = "latent_symmetric"
-	for L in Ls:
-		print("Calculating stats for L={:d} . . . ".format(L))
-		calculate_stats("results", observable_name, L)
-		print("Plotting L={:d} . . . ".format(L))
-		plot("results", observable_name, L)
-		if observable_name == "latent_symmetric":
-			print("Calculating unbroken symmetries for L={:d} . . . ".format(L))
-			calculate_symmetries("results", observable_name, L)  # , z_critical=1.497)
-			plot_symmetry_scores("results", observable_name, L)
+	for observable_name in observable_names:
+		print("{}:".format(observable_name))
+		for L in Ls:
+			print("\tL={:d} . . . ".format(L))
+			calculate_stats("results", observable_name, L)
+			plot("results", observable_name, L)
 
 	print("Done!")
