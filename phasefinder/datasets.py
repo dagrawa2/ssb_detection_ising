@@ -13,7 +13,7 @@ class Ising(object):
 	def __init__(self):
 		pass
 
-	def generate(self, d=2, L=20, T=4.0, mc_steps=10000, ieq_steps=1000, meas_steps=5, dynamic="wolff", seed=107, print_state=False, ising_program="../ising/install/bin/ising", output_dir="output", encode=False):
+	def generate(self, d=2, L=20, J=1, T=4.0, mc_steps=10000, ieq_steps=1000, meas_steps=5, seed=107, ising_program="../ising/install/bin/ising", output_dir="output", encode=False):
 		time_start = time.time()
 		kwargs = locals()
 		kwargs.pop("self")
@@ -21,11 +21,9 @@ class Ising(object):
 			setattr(self, name, value)
 
 		assert not os.path.isdir("output"), "The directory \"output\" already exists and cannot be overwritten."
-		assert dynamic in ["metropolis", "wolff"], "Argument dynamic must be either \"metropolis\" or \"wolff\"; got {} instead.".format(dynamic)
-		dynamic_int = 0 if dynamic == "metropolis" else 3
+		assert J==1 or J==-1, "J must be either 1 (ferromagnetic) or -1 (antiferromagnetic; got {:d} instead.".format(J)
 
-		print_state_str = "--print-state" if print_state else ""
-		os.system("{} -d {:d} -L {:d} -T {:f} --nmcs {:d} --ieq {:d} --nmeas {:d} --dyn {:d} -s {:d} {}".format(ising_program, d, L, T, mc_steps, ieq_steps, meas_steps, dynamic_int, seed, print_state_str))
+		os.system("{} -d {:d} -L {:d} -J {:d} -T {:f} --nmcs {:d} --ieq {:d} --nmeas {:d} -s {:d}".format(ising_program, d, L, J, T, mc_steps, ieq_steps, meas_steps, seed))
 		if output_dir != "output":
 			os.system("mv output {}".format(output_dir))
 		if encode:
@@ -59,11 +57,11 @@ class Ising(object):
 			args = json.load(fp)
 		self.d = args["d"]
 		self.L = args["L"]
+		self.J = args["J"]
 		self.T = args["T"]
 		self.mc_steps = args["nmcs"]
 		self.ieq_steps = args["ieq"]
 		self.meas_steps = args["nmeas"]
-		self.dynamic = args["dyn"]
 		self.seed = args["s"]
 
 	def load_states(self, data_dir, decode=False, n_samples=None, dtype=None, flatten=False, channel_dim=False, symmetric=False):
@@ -109,8 +107,13 @@ class Ising(object):
 		return Ms
 
 	@staticmethod
-	def jackknife(samples, func):
-		estimate = func(samples.reshape((1, -1)))
+	def jackknife(samples, func, samples_2=None):
+		estimate = func(samples.reshape((1, -1))).sum()
 		jk_estimates = func(np.flip(circulant(np.flip(samples)).T, 1)[:,1:])
+		if samples_2 is not None:
+			estimate_2 = func(samples_2.reshape((1, -1))).sum()
+			jk_estimates_2 = func(np.flip(circulant(np.flip(samples_2)).T, 1)[:,1:])
+			estimate = estimate/estimate_2
+			jk_estimates = jk_estimates[:,None]/jk_estimates_2[None,:]
 		error = np.sqrt(np.sum((jk_estimates-estimate)**2))
 		return estimate, error

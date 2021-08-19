@@ -16,17 +16,16 @@ for L in Ls:
 		I = Ising()
 		I.generate(d=2, 
 			L=L, 
+			J=-1, 
 			T=T, 
 			mc_steps=50000, 
 			ieq_steps=10000, 
 			meas_steps=10, 
-			dynamic="wolff", 
 			seed=107, 
-			print_state=True, 
-			output_dir="data/L{:d}/T{:.2f}".format(L, T), 
+			output_dir="data/antiferromagnetic/L{:d}/T{:.2f}".format(L, T), 
 			encode=True)
 
-		I.reduce_checkerboard("data/L{:d}/T{:.2f}".format(L, T), decode=True)
+		I.reduce_checkerboard("data/antiferromagnetic/L{:d}/T{:.2f}".format(L, T), decode=True)
 
 
 print("Done!")
