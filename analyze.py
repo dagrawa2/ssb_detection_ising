@@ -13,23 +13,23 @@ from phasefinder import groups
 from phasefinder.datasets import Ising
 
 
-def gather_Ms(data_dir, L):
+def gather_Ms(data_dir, J, L):
 	temperatures = []
 	measurements = []
-	L_dir = os.path.join(data_dir, "L{:d}".format(L))
+	L_dir = os.path.join(data_dir, J, "L{:d}".format(L))
 	for temperature_dir in sorted(os.listdir(L_dir)):
 		I = Ising()
-		Ms = I.load_M(os.path.join(L_dir, temperature_dir), per_spin=True)
+		Ms = I.magnetization(os.path.join(L_dir, temperature_dir), per_spin=True, staggered=(J=="antiferromagnetic"))
 		temperatures.append(I.T)
 		measurements.append(Ms)
 	temperatures = np.array(temperatures)
 	measurements = np.stack(measurements, 0)
-	output_dir = "results/magnetization/L{:d}".format(L)
+	output_dir = "results/{}/magnetization/L{:d}".format(J, L)
 	os.makedirs(output_dir, exist_ok=True)
 	np.savez(os.path.join(output_dir, "measurements.npz"), temperatures=temperatures, measurements=measurements)
 
-def calculate_stats(results_dir, observable_name, L, bins=50):
-	data = np.load(os.path.join(results_dir, observable_name, "L{:d}".format(L), "measurements.npz"))
+def calculate_stats(results_dir, J, observable_name, L, bins=50):
+	data = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "measurements.npz"))
 	temperatures = data["temperatures"]
 	measurements = data["measurements"]
 	distributions = []
@@ -52,11 +52,11 @@ def calculate_stats(results_dir, observable_name, L, bins=50):
 	binder_means = np.array(binder_means)
 	binder_stds = np.array(binder_stds)
 	distribution_range = np.array(list(distribution_range))
-	np.savez(os.path.join(results_dir, observable_name, "L{:d}".format(L), "stats.npz"), distributions=distributions, distribution_range=distribution_range, order_means=order_means, order_stds=order_stds, binder_means=binder_means, binder_stds=binder_stds)
+	np.savez(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"), distributions=distributions, distribution_range=distribution_range, order_means=order_means, order_stds=order_stds, binder_means=binder_means, binder_stds=binder_stds)
 
-def plot(results_dir, observable_name, L):
-	temperatures = np.load(os.path.join(results_dir, observable_name, "L{:d}".format(L), "measurements.npz"))["temperatures"]
-	stats = np.load(os.path.join(results_dir, observable_name, "L{:d}".format(L), "stats.npz"))
+def plot(results_dir, J, observable_name, L):
+	temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "measurements.npz"))["temperatures"]
+	stats = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"))
 	distributions = stats["distributions"]
 	distribution_range = stats["distribution_range"].tolist() if "distribution_range" in stats.keys() else [-1, 1]
 	order_means, order_stds = stats["order_means"], stats["order_stds"]
@@ -69,7 +69,7 @@ def plot(results_dir, observable_name, L):
 	plt.ylabel(r"$M$", fontsize=12)
 	plt.title(r"$L="+str(int(L))+r"$", fontsize=16)
 	plt.tight_layout()
-	plots_dir = os.path.join(results_dir, "plots", observable_name, "L{:d}".format(L))
+	plots_dir = os.path.join(results_dir, "plots", J, observable_name, "L{:d}".format(L))
 	os.makedirs(plots_dir, exist_ok=True)
 	plt.savefig(os.path.join(plots_dir, "distribution.png"))
 	plt.close()
@@ -81,7 +81,6 @@ def plot(results_dir, observable_name, L):
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="blue", linestyle="dashed")
 	plt.xlabel(r"$T$", fontsize=12)
 	plt.ylabel(r"$\langle |M|\rangle$", fontsize=12)
-	plt.ylim(0, max(distribution_range))
 	plt.title(r"$L="+str(int(L))+r"$", fontsize=16)
 	plt.tight_layout()
 	plt.savefig(os.path.join(plots_dir, "order.png"))
@@ -94,15 +93,14 @@ def plot(results_dir, observable_name, L):
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="blue", linestyle="dashed")
 	plt.xlabel(r"$T$", fontsize=12)
 	plt.ylabel(r"$U_4$", fontsize=12)
-	plt.ylim(-0.1, 0.7)
 	plt.title(r"$L="+str(int(L))+r"$", fontsize=16)
 	plt.tight_layout()
 	plt.savefig(os.path.join(plots_dir, "binder.png"))
 	plt.close()
 
 
-def calculate_symmetries(results_dir, observable_name, L, z_critical=1):
-	data = np.load(os.path.join(results_dir, observable_name, "L{:d}".format(L), "symmetry_scores.npz"))
+def calculate_symmetries(results_dir, J, observable_name, L, z_critical=1):
+	data = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "symmetry_scores.npz"))
 	temperatures = data["temperatures"]
 	group_elements = [groups.Element(*g) for g in data["group_elements"].tolist()]
 	symmetry_scores = data["symmetry_scores"]
@@ -132,11 +130,11 @@ def calculate_symmetries(results_dir, observable_name, L, z_critical=1):
 	for (G, T) in zip(unbroken_groups, temperatures):
 		grouped_temperatures[G].append( float(T) )
 	output = [{"group": [g.value for g in G], "temperatures": sorted(Ts)} for (G, Ts) in grouped_temperatures.items()]
-	with open(os.path.join(results_dir, observable_name, "L{:d}".format(L), "unbroken_symmetries.json"), "w") as fp:
+	with open(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "unbroken_symmetries.json"), "w") as fp:
 		json.dump(output, fp, indent=2)
 
-def plot_symmetry_scores(results_dir, observable_name, L):
-	data = np.load(os.path.join(results_dir, observable_name, "L{:d}".format(L), "symmetry_scores.npz"))
+def plot_symmetry_scores(results_dir, J, observable_name, L):
+	data = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "symmetry_scores.npz"))
 	temperatures = data["temperatures"]
 	symmetry_scores = data["symmetry_scores"]
 	temperatures = np.repeat(temperatures, symmetry_scores.shape[1])
@@ -148,25 +146,81 @@ def plot_symmetry_scores(results_dir, observable_name, L):
 	plt.ylabel(r"MMD", fontsize=12)
 	plt.title(r"$L="+str(int(L))+r"$", fontsize=16)
 	plt.tight_layout()
-	plots_dir = os.path.join(results_dir, "plots", observable_name, "L{:d}".format(L))
+	plots_dir = os.path.join(results_dir, "plots", J, observable_name, "L{:d}".format(L))
 	os.makedirs(plots_dir, exist_ok=True)
 	plt.savefig(os.path.join(plots_dir, "mmds.png"))
 	plt.close()
 
 
+def curve_zeros(x, y):
+	zeros = []
+	x_1, y_1 = x[0], y[0]
+	for (x_2, y_2) in zip(x[1:], y[1:]):
+		if np.sign(y_1) != np.sign(y_2):
+			zeros.append( x_1 - y_1*(x_2-x_1)/(y_2-y_1) )
+		x_1, y_1 = x_2, y_2
+	return np.array(zeros)
+
+def calculate_binder_ratios(results_dir, J, observable_name, L_1, L_2):
+	data_1 = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L_1), "measurements.npz"))
+	data_2 = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L_2), "measurements.npz"))
+	temperatures = data_1["temperatures"]
+	measurements_1 = data_1["measurements"]
+	measurements_2 = data_2["measurements"]
+	ratio_means, ratio_stds = [], []
+	for i in range(measurements_1.shape[0]):
+		ratio_mean, ratio_std = Ising().jackknife(measurements_1[i], lambda x: 1 - np.mean(x**4, 1)/(3*np.mean(x**2, 1)**2), samples_2=measurements_2[i])
+		ratio_means.append(ratio_mean)
+		ratio_stds.append(ratio_std)
+	ratio_means = np.array(ratio_means) - 1
+	ratio_stds = np.array(ratio_stds)
+	zero_means = curve_zeros(temperatures, ratio_means)
+	zero_stds_lower = curve_zeros(temperatures, ratio_means-ratio_stds)
+	zero_stds_upper = curve_zeros(temperatures, ratio_means+ratio_stds)
+	np.savez(os.path.join(results_dir, J, observable_name, "binder_ratios_L{:d}_{:d}.npz".format(L_1, L_2)), temperatures=temperatures, ratio_means=ratio_means, ratio_stds=ratio_stds, zero_means=zero_means, zero_stds_lower=zero_stds_lower, zero_stds_upper=zero_stds_upper)
+
+
+def generator_table(results_dir, J, Ls):
+	output_dir = os.path.join(results_dir, "tables", J)
+	os.makedirs(output_dir, exist_ok=True)
+	with open(os.path.join(output_dir, "generator_reps.tex"), "w") as fp:
+		fp.write("\\begin{tabular}{ccc}\n")
+		fp.write("\\toprule\n")
+		fp.write("$L$ & Spatial & Internal \\\\\n")
+		fp.write("\\midrule\n")
+		for L in Ls:
+			with open(os.path.join(results_dir, J, "latent_equivariant", "L{:d}".format(L), "generator_reps.json"), "r") as json_file:
+				gens = json.load(json_file)
+			fp.write("{:d} & {:.3f} & {:.3f} \\\\\n".format(L, gens["spatial"], gens["internal"]))
+		fp.write("\\bottomrule\n")
+		fp.write("\\end{tabular}")
+
+
 if __name__ == "__main__":
+	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
 	observable_names = ["magnetization", "latent", "latent_equivariant"]
 
-#	for L in Ls:
-#		print("Gathering magnetizations for L={:d} . . . ".format(L))
-#		gather_Ms("data", L)
-
-	for observable_name in observable_names:
-		print("{}:".format(observable_name))
+	print("Gathering magnetizations . . . ")
+	for J in Js:
+		print("\t{} case".format(J))
 		for L in Ls:
-			print("\tL={:d} . . . ".format(L))
-			calculate_stats("results", observable_name, L)
-			plot("results", observable_name, L)
+			print("\t\tL={:d}".format(L))
+			gather_Ms("data", J, L)
+
+	print("===")
+	for J in Js:
+		print("{} case".format(J))
+		for observable_name in observable_names:
+			print("\t{}:".format(observable_name))
+			for L in Ls:
+				print("\t\tL={:d} . . . ".format(L))
+				calculate_stats("results", J, observable_name, L)
+				plot("results", J, observable_name, L)
+#			print("\tBinder ratios")
+#			calculate_binder_ratios("results", J, observable_name, 128, 64)
+			if observable_name == "latent_equivariant":
+				print("\tgenerator table")
+				generator_table("results", J, Ls)
 
 	print("Done!")
