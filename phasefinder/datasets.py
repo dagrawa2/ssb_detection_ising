@@ -40,15 +40,10 @@ class Ising(object):
 	def reduce_checkerboard(self, data_dir, decode=False):
 		states = self.load_states(data_dir, decode=decode)
 		assert self.d == 2, "Checkerboard representation is supported only for dimension d = 2."
-		states_symmetric = 2/self.L**2 * np.roll(states \
-			.reshape((-1, self.L//2, 2, self.L)) \
-			.sum(1) \
-			.reshape((-1, 2, self.L//2, 2)) \
-			.sum(2) \
-			.reshape((-1, 1)), \
-			1, 1) \
-			.reshape((-1, 2, 2)) \
-			.sum(2)
+		states_symmetric = 2/self.L**2 * np.stack([ \
+			np.sum(states[:,::2,::2]+states[:,1::2,1::2], (1, 2)), \
+			np.sum(states[:,1::2,::2]+states[:,::2,1::2], (1, 2)) \
+		], 1)
 
 		np.save(os.path.join(data_dir, "states_symmetric.npy"), states_symmetric)
 
@@ -57,7 +52,7 @@ class Ising(object):
 			args = json.load(fp)
 		self.d = args["d"]
 		self.L = args["L"]
-		self.J = args["J"]
+		self.J = args["J"] if "J" in args.keys() else 1
 		self.T = args["T"]
 		self.mc_steps = args["nmcs"]
 		self.ieq_steps = args["ieq"]
@@ -103,6 +98,20 @@ class Ising(object):
 		Ms = pd.read_csv(os.path.join(data_dir, "EMR.csv"))["M"].values
 		if per_spin:
 			Ms = Ms/self.L**2
+
+		return Ms
+
+	def magnetization(self, data_dir, per_spin=False, staggered=False):
+		self.load_args(data_dir)
+		reduced_states = np.load(os.path.join(data_dir, "states_symmetric.npy"))
+
+		if staggered:
+			Ms = (reduced_states[:,0] - reduced_states[:,1])/2
+		else:
+			Ms = reduced_states.sum(1)/2
+
+		if not per_spin:
+			Ms = self.L**2 * Ms
 
 		return Ms
 
