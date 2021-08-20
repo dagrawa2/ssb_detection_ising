@@ -39,8 +39,8 @@ class Autoencoder(object):
 					Z_neg = self.encoder(-X_batch)
 					logits = self.decoder(torch.cat([Z, T_batch], 1))
 					loss = F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2) + self.equivariance_reg*( \
-						+ torch.minimum( ((Z_flip*Z).sum()/Z.pow(2).sum()-1).pow(2), ((Z_flip*Z).sum()/Z.pow(2).sum()+1).pow(2) ) \
-						+ torch.minimum( ((Z_neg*Z).sum()/Z.pow(2).sum()-1).pow(2), ((Z_neg*Z).sum()/Z.pow(2).sum()+1).pow(2) ) )
+						1 - (Z*Z_flip).sum()**2/(Z.pow(2).sum()*Z_flip.pow(2).sum()) \
+						+ 1 - (Z*Z_neg).sum()**2/(Z.pow(2).sum()*Z_neg.pow(2).sum()) )
 				else:
 					logits = self.decoder(torch.cat([self.encoder(X_batch), T_batch], 1))
 					loss = F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2)
