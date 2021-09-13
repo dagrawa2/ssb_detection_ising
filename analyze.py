@@ -2,6 +2,8 @@ import os
 import copy
 import json
 import numpy as np
+from scipy.interpolate import CubicSpline
+from scipy.optimize import root_scalar
 
 import matplotlib
 matplotlib.use("agg")
@@ -33,7 +35,7 @@ def calculate_stats(results_dir, J, observable_name, L, bins=50):
 	temperatures = data["temperatures"]
 	measurements = data["measurements"]
 	distributions = []
-	distribution_range = ( round(measurements.min()), round(measurements.max()) )
+	distribution_range = (measurements.min(), measurements.max())
 	order_means, order_stds = [], []
 	binder_means, binder_stds = [], []
 	for i in range(measurements.shape[0]):
@@ -196,6 +198,36 @@ def generator_table(results_dir, J, Ls):
 		fp.write("\\end{tabular}")
 
 
+def critical_temperature_table(results_dir, J, Ls):
+	output_dir = os.path.join(results_dir, "tables", J)
+	os.makedirs(output_dir, exist_ok=True)
+	with open(os.path.join(output_dir, "critical_temperatures.tex"), "w") as fp:
+		fp.write("\\begin{tabular}{cc}\n")
+		fp.write("\\toprule\n")
+		fp.write("Method & Critical Temp. \\\\\n")
+		fp.write("\\midrule\n")
+		methods = ["Mag", "AE", "GE-AE"]
+		for (observable_name, method) in zip(observable_names, methods):
+			temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(Ls[0]), "measurements.npz"))["temperatures"]
+			splines = []
+			for L in Ls:
+				binder_means = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"))["binder_means"]
+				splines.append( CubicSpline(temperatures, binder_means) )
+			crossings = []
+			for i in range(len(Ls)):
+				for j in range(i+1, len(Ls)):
+					cs_i, cs_j = splines[i], splines[j]
+					f = lambda x: cs_i(x)-cs_j(x)
+					fprime = lambda x: cs_i(x, nu=1)-cs_j(x, nu=1)
+					fprime2 = lambda x: cs_i(x, nu=2)-cs_j(x, nu=2)
+					sol = root_scalar(f, fprime=fprime, fprime2=fprime2, bracket=[temperatures.min(), temperatures.max()], x0=2.2)
+					crossings.append(sol.root)
+			crossings = np.array(crossings)
+			fp.write("{} & ${:.3f}\\pm {:.3f}$ \\\\\n".format(method, crossings.mean(), crossings.std()))
+		fp.write("\\bottomrule\n")
+		fp.write("\\end{tabular}")
+
+
 if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
@@ -222,5 +254,9 @@ if __name__ == "__main__":
 			if observable_name == "latent_equivariant":
 				print("\tgenerator table")
 				generator_table("results", J, Ls)
+
+		print("\tcritical temperature table")
+		critical_temperature_table("results", J, Ls)
+
 
 	print("Done!")
