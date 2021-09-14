@@ -5,6 +5,8 @@ import numpy as np
 from scipy.integrate import quad as quad_integrate
 from scipy.interpolate import CubicSpline
 from scipy.optimize import root_scalar
+from functools import reduce
+from operator import mul
 
 import matplotlib
 matplotlib.use("agg")
@@ -210,7 +212,7 @@ def critical_temperature_table(results_dir, J, observable_names, Ls):
 		methods = {"magnetization": "Mag", "latent": "AE", "latent_equivariant": "GE-AE"}
 		for observable_name in observable_names:
 			temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(Ls[0]), "measurements.npz"))["temperatures"]
-			Tc_means, Tc_stds = [], []
+			likelihoods = []
 			for L in Ls[1:]:
 				bd_means = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"))["binder_means"] \
 					- np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L//2), "stats.npz"))["binder_means"]
@@ -219,13 +221,12 @@ def critical_temperature_table(results_dir, J, observable_names, Ls):
 				bd_mean = CubicSpline(temperatures, bd_means)
 				bd_std = CubicSpline(temperatures, bd_stds)
 				bd = lambda x: 1/(np.sqrt(2*np.pi)*bd_std(x)) * np.exp(-0.5*(bd_mean(x)/bd_std(x))**2)
-				norm = quad_integrate(bd, temperatures[0], temperatures[-1], limit=500)[0]
-				Tc_means.append( quad_integrate(lambda x: x*bd(x), temperatures[0], temperatures[-1], limit=500)[0]/norm )
-				Tc_stds.append( np.sqrt( quad_integrate(lambda x: x**2*bd(x), temperatures[0], temperatures[-1], limit=500)[0]/norm-Tc_means[-1]**2 ) )
-			Tc_means = np.array(Tc_means)
-			Tc_stds = np.array(Tc_stds)
-			Tc_mean = np.mean(Tc_means)
-			Tc_std = np.sqrt(np.sum(Tc_stds**2))/len(Tc_stds)
+				likelihoods.append(bd)
+			likelihood = lambda x: reduce(mul, [l(x) for l in likelihoods], 1)
+			evidence = quad_integrate(likelihood, temperatures[0], temperatures[-1], limit=500)[0]
+			posterior = lambda x: likelihood(x)/evidence
+			Tc_mean = quad_integrate(lambda x: x*posterior(x), temperatures[0], temperatures[-1], limit=500)[0]
+			Tc_std = np.sqrt( quad_integrate(lambda x: x**2*posterior(x), temperatures[0], temperatures[-1], limit=500)[0]-Tc_mean**2 )
 			fp.write("{} & ${:.3f}\\pm {:.3f}$ \\\\\n".format(methods[observable_name], Tc_mean, Tc_std))
 		fp.write("\\bottomrule\n")
 		fp.write("\\end{tabular}")
