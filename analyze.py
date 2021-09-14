@@ -201,7 +201,7 @@ def generator_table(results_dir, J, Ls):
 		fp.write("\\end{tabular}")
 
 
-def critical_temperature_table(results_dir, J, observable_names, Ls):
+def critical_temperature_table(results_dir, J, observable_names, Ls, row_headings_dict):
 	output_dir = os.path.join(results_dir, "tables", J)
 	os.makedirs(output_dir, exist_ok=True)
 	with open(os.path.join(output_dir, "critical_temperatures.tex"), "w") as fp:
@@ -209,25 +209,19 @@ def critical_temperature_table(results_dir, J, observable_names, Ls):
 		fp.write("\\toprule\n")
 		fp.write("Method & Critical Temp. \\\\\n")
 		fp.write("\\midrule\n")
-		methods = {"magnetization": "Mag", "latent": "AE", "latent_equivariant": "GE-AE"}
 		for observable_name in observable_names:
 			temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(Ls[0]), "measurements.npz"))["temperatures"]
-			likelihoods = []
-			for L in Ls[1:]:
-				bd_means = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"))["binder_means"] \
-					- np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L//2), "stats.npz"))["binder_means"]
-				bd_stds = np.sqrt( np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"))["binder_stds"]**2 \
-					+ np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L//2), "stats.npz"))["binder_stds"]**2 )
-				bd_mean = CubicSpline(temperatures, bd_means)
-				bd_std = CubicSpline(temperatures, bd_stds)
-				bd = lambda x: 1/(np.sqrt(2*np.pi)*bd_std(x)) * np.exp(-0.5*(bd_mean(x)/bd_std(x))**2)
-				likelihoods.append(bd)
-			likelihood = lambda x: reduce(mul, [l(x) for l in likelihoods], 1)
-			evidence = quad_integrate(likelihood, temperatures[0], temperatures[-1], limit=500)[0]
-			posterior = lambda x: likelihood(x)/evidence
-			Tc_mean = quad_integrate(lambda x: x*posterior(x), temperatures[0], temperatures[-1], limit=500)[0]
-			Tc_std = np.sqrt( quad_integrate(lambda x: x**2*posterior(x), temperatures[0], temperatures[-1], limit=500)[0]-Tc_mean**2 )
-			fp.write("{} & ${:.3f}\\pm {:.3f}$ \\\\\n".format(methods[observable_name], Tc_mean, Tc_std))
+			posterior = np.ones_like(temperatures)
+			for (L_1, L_2) in zip(Ls[:-1], Ls[1:]):
+				bd_means = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L_1), "stats.npz"))["binder_means"] \
+					- np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L_2), "stats.npz"))["binder_means"]
+				bd_stds = np.sqrt( np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L_1), "stats.npz"))["binder_stds"]**2 \
+					+ np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L_2), "stats.npz"))["binder_stds"]**2 )
+				posterior = posterior * 1/(np.sqrt(2*np.pi)*bd_stds) * np.exp(-0.5*(bd_means/bd_stds)**2)
+			posterior = posterior/posterior.sum()
+			Tc_mean = (temperatures*posterior).sum()
+			Tc_std = np.sqrt( (temperatures**2*posterior).sum() - Tc_mean**2 )
+			fp.write("{} & ${:.3f}\\pm {:.3f}$ \\\\\n".format(row_headings_dict[observable_name], Tc_mean, Tc_std))
 		fp.write("\\bottomrule\n")
 		fp.write("\\end{tabular}")
 
@@ -236,6 +230,8 @@ if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
 	observable_names = ["magnetization", "latent", "latent_equivariant"]
+	row_headings_dict = {"magnetization": "Mag", "latent": "AE", "latent_equivariant": "GE-AE"}
+
 
 	"""
 	print("Gathering magnetizations . . . ")
@@ -265,7 +261,7 @@ if __name__ == "__main__":
 
 		print("\tcritical temperature table")
 #		observable_names = ["latent_equivariant"]
-		critical_temperature_table("results", J, observable_names, Ls)
+		critical_temperature_table("results", J, observable_names, Ls, row_headings_dict)
 
 
 	print("Done!")
