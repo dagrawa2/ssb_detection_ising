@@ -2,6 +2,7 @@ import os
 import copy
 import json
 import numpy as np
+from scipy.integrate import quad as quad_integrate
 from scipy.interpolate import CubicSpline
 from scipy.optimize import root_scalar
 
@@ -198,7 +199,7 @@ def generator_table(results_dir, J, Ls):
 		fp.write("\\end{tabular}")
 
 
-def critical_temperature_table(results_dir, J, Ls):
+def critical_temperature_table(results_dir, J, observable_names, Ls):
 	output_dir = os.path.join(results_dir, "tables", J)
 	os.makedirs(output_dir, exist_ok=True)
 	with open(os.path.join(output_dir, "critical_temperatures.tex"), "w") as fp:
@@ -206,24 +207,26 @@ def critical_temperature_table(results_dir, J, Ls):
 		fp.write("\\toprule\n")
 		fp.write("Method & Critical Temp. \\\\\n")
 		fp.write("\\midrule\n")
-		methods = ["Mag", "AE", "GE-AE"]
-		for (observable_name, method) in zip(observable_names, methods):
+		methods = {"magnetization": "Mag", "latent": "AE", "latent_equivariant": "GE-AE"}
+		for observable_name in observable_names:
 			temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(Ls[0]), "measurements.npz"))["temperatures"]
-			splines = []
-			for L in Ls:
-				binder_means = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"))["binder_means"]
-				splines.append( CubicSpline(temperatures, binder_means) )
-			crossings = []
-			for i in range(len(Ls)):
-				for j in range(i+1, len(Ls)):
-					cs_i, cs_j = splines[i], splines[j]
-					f = lambda x: cs_i(x)-cs_j(x)
-					fprime = lambda x: cs_i(x, nu=1)-cs_j(x, nu=1)
-					fprime2 = lambda x: cs_i(x, nu=2)-cs_j(x, nu=2)
-					sol = root_scalar(f, fprime=fprime, fprime2=fprime2, bracket=[temperatures.min(), temperatures.max()], x0=2.2)
-					crossings.append(sol.root)
-			crossings = np.array(crossings)
-			fp.write("{} & ${:.3f}\\pm {:.3f}$ \\\\\n".format(method, crossings.mean(), crossings.std()))
+			Tc_means, Tc_stds = [], []
+			for L in Ls[1:]:
+				bd_means = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"))["binder_means"] \
+					- np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L//2), "stats.npz"))["binder_means"]
+				bd_stds = np.sqrt( np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "stats.npz"))["binder_stds"]**2 \
+					+ np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L//2), "stats.npz"))["binder_stds"]**2 )
+				bd_mean = CubicSpline(temperatures, bd_means)
+				bd_std = CubicSpline(temperatures, bd_stds)
+				bd = lambda x: 1/(np.sqrt(2*np.pi)*bd_std(x)) * np.exp(-0.5*(bd_mean(x)/bd_std(x))**2)
+				norm = quad_integrate(bd, temperatures[0], temperatures[-1], limit=500)[0]
+				Tc_means.append( quad_integrate(lambda x: x*bd(x), temperatures[0], temperatures[-1], limit=500)[0]/norm )
+				Tc_stds.append( np.sqrt( quad_integrate(lambda x: x**2*bd(x), temperatures[0], temperatures[-1], limit=500)[0]/norm-Tc_means[-1]**2 ) )
+			Tc_means = np.array(Tc_means)
+			Tc_stds = np.array(Tc_stds)
+			Tc_mean = np.mean(Tc_means)
+			Tc_std = np.sqrt(np.sum(Tc_stds**2))/len(Tc_stds)
+			fp.write("{} & ${:.3f}\\pm {:.3f}$ \\\\\n".format(methods[observable_name], Tc_mean, Tc_std))
 		fp.write("\\bottomrule\n")
 		fp.write("\\end{tabular}")
 
@@ -233,15 +236,18 @@ if __name__ == "__main__":
 	Ls = [16, 32, 64, 128]
 	observable_names = ["magnetization", "latent", "latent_equivariant"]
 
+	"""
 	print("Gathering magnetizations . . . ")
 	for J in Js:
 		print("\t{} case".format(J))
 		for L in Ls:
 			print("\t\tL={:d}".format(L))
 			gather_Ms("data", J, L)
+	"""
 
 	print("===")
 	for J in Js:
+		"""
 		print("{} case".format(J))
 		for observable_name in observable_names:
 			print("\t{}:".format(observable_name))
@@ -254,9 +260,11 @@ if __name__ == "__main__":
 			if observable_name == "latent_equivariant":
 				print("\tgenerator table")
 				generator_table("results", J, Ls)
+		"""
 
 		print("\tcritical temperature table")
-		critical_temperature_table("results", J, Ls)
+#		observable_names = ["latent_equivariant"]
+		critical_temperature_table("results", J, observable_names, Ls)
 
 
 	print("Done!")
