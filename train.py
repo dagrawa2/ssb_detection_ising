@@ -125,7 +125,7 @@ results_dict["time"] = time.time()-time_start
 print("Saving results ...")
 with open(os.path.join(results_dir, "results.json"), "w") as fp:
 	json.dump(results_dict, fp, indent=2)
-#trainer.save_model(os.path.join(results_dir, "params.pth"))
+trainer.save_encoder(os.path.join(results_dir, "encoder.pth"))
 
 
 print("Done!")
