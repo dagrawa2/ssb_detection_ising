@@ -1,6 +1,6 @@
 __pycache__
 data
-plots
-results
+results*
 reports/report*
 out.txt
+test.py
