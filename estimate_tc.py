@@ -5,31 +5,12 @@ from scipy.interpolate import interp1d
 from scipy.linalg import lstsq
 from scipy.optimize import bisect
 
-
-def jackknife_samples(data):
-	M = data.shape[0]
-	sums = data.sum(0)
-	estimates = sums/M
-	samples = (sums[None,:] - data)/(M-1)
-	samples = np.concatenate((estimates[None,:], samples), 0)
-	return samples
-
-def jackknife_mean_std(samples):
-	D = samples.ndim
-	if D == 1:
-		samples = samples[:,None]
-	estimates, samples = samples[0], samples[1:]
-	std = np.sqrt(np.sum((samples - estimates[None,:])**2, 0))
-	bias = samples.shape[0]*(samples.mean(0) - estimates)
-	mean = estimates - bias
-	if D == 1:
-		mean, std = mean.item(), std.item()
-	return mean, std
+from phasefinder import jackknife
 
 def U2_samples(results_dir, J, observable_name, L):
 	measurements = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "measurements.npz"))["measurements"].T
-	samples_square = jackknife_samples(measurements**2)
-	samples_abs = jackknife_samples(np.abs(measurements))
+	samples_square = jackknife.calculate_samples(measurements**2)
+	samples_abs = jackknife.calculate_samples(np.abs(measurements))
 	samples = samples_square/samples_abs**2
 	return samples
 
@@ -80,10 +61,10 @@ def critical_temperature_table(results_dir, J, observable_names, Ls, row_heading
 			crossings = np.stack([crossing_samples(U_2[i], U_2[i+1], temperatures) for i in range(len(Ls)-1)], 1)
 			assert ~np.isnan(crossings[0]).any(), "Curves without jackknifing do not cross; crossings[0] = {}.".format(crossings[0])
 			crossings = crossings[~np.isnan(crossings).any(1)]
-			crossings_mean, crossings_std = jackknife_mean_std(crossings)
+			crossings_mean, crossings_std = jackknife.calculate_mean_std(crossings)
 			weights = 1/crossings_std
 			Tc_samples = yintercept_samples(Ls_recip[1:], crossings, weights=weights)
-			Tc_mean, Tc_std = jackknife_mean_std(Tc_samples)
+			Tc_mean, Tc_std = jackknife.calculate_mean_std(Tc_samples)
 			fp.write("{} & ${:.3f}\\pm {:.3f}$ \\\\\n".format(row_headings_dict[observable_name], Tc_mean, Tc_std))
 		fp.write("\\bottomrule\n")
 		fp.write("\\end{tabular}")

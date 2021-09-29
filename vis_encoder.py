@@ -3,6 +3,7 @@ import itertools
 import numpy as np
 import torch
 import polytope as pc
+from scipy.interpolate import interp1d
 
 import matplotlib
 matplotlib.use("agg")
@@ -10,6 +11,9 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 matplotlib.rc("xtick", labelsize=14)
 matplotlib.rc("ytick", labelsize=14)
+
+from phasefinder import jackknife
+
 
 np.random.seed(1)
 torch.manual_seed(2)
@@ -35,10 +39,14 @@ def make_encoder_func(params):
 		return y
 	return func
 
-def rescale(params, encoder_func, J="ferromagnetic"):
+def get_scale(encoder_func, J="ferromagnetic"):
 	lattice = np.array([1, 1]) if J == "ferromagnetic" \
 		else np.array([1, -1])
 	scale = np.max(np.abs(encoder_func( np.stack([lattice, -lattice], 0) )))
+	return scale
+
+def rescale(params, encoder_func, J="ferromagnetic"):
+	scale = get_scale(encoder_func, J=J)
 	params["linear2.weight"] = params["linear2.weight"]/scale
 	params["linear2.bias"] = params["linear2.bias"]/scale
 	func = make_encoder_func(params)
@@ -110,17 +118,87 @@ def region_table(J, L):
 			norm = np.sqrt(np.sum(gradient**2))
 			angle = np.real( -1j*np.log((gradient[0]+gradient[1]*1j)/norm) )
 			angle *= 180/np.pi
-			fp.write("{:.0f}% & {:.2f} & {:.0f} \\\\\n".format(area, norm, angle))
+			fp.write("{:.0f} & {:.2f} & {:.0f} \\\\\n".format(area, norm, angle))
+		fp.write("\\bottomrule\n")
+		fp.write("\\end{tabular}")
+
+
+def magnitude_plot(J, L, N=1025):
+	params = load_encoder_params(J, L)
+	encoder_func = make_encoder_func(params)
+	params, encoder_func = rescale(params, encoder_func, J=J)
+	lattice = np.array([1, 1]) if J == "ferromagnetic" \
+		else np.array([1, -1])
+	x = np.linspace(-1, 1, N, endpoint=True)
+	y = encoder_func(np.outer(x, lattice))
+	plt.figure()
+	plt.plot(x, y, color="black")
+	plt.xlabel("Magnetization")
+	plt.ylabel("Encoding")
+	plt.tight_layout()
+	output_dir = "results/vis_encoder/{}/L{:d}".format(J, L)
+	os.makedirs(output_dir, exist_ok=True)
+	plt.savefig(os.path.join(output_dir, "magnitude.png"))
+	plt.close()
+
+
+def onsager_comparison(J, L, N=1025):
+	params = load_encoder_params(J, L)
+	encoder_func = make_encoder_func(params)
+	scale = get_scale(encoder_func, J=J)
+	temperatures = np.load(os.path.join("results", J, "magnetization", "L{:d}".format(L), "measurements.npz"))["temperatures"]
+	temperatures_dense = np.linspace(temperatures.min(), temperatures.max(), N, endpoint=True)
+	measurements_M = np.load(os.path.join("results", J, "magnetization", "L{:d}".format(L), "measurements.npz"))["measurements"].T
+	measurements_LE = np.load(os.path.join("results", J, "latent_equivariant", "L{:d}".format(L), "measurements.npz"))["measurements"].T
+	M_mean, M_std = jackknife.calculate_mean_std(jackknife.calculate_samples(measurements_M))
+	LE_mean, LE_std = jackknife.calculate_mean_std(jackknife.calculate_samples(measurements_LE)/scale)
+	M_mean = interp1d(temperatures, M_mean, kind="cubic")
+	M_std = interp1d(temperatures, M_std, kind="cubic")
+	LE_mean = interp1d(temperatures, LE_mean, kind="cubic")
+	LE_std = interp1d(temperatures, LE_std, kind="cubic")
+	onsager = lambda temps: np.where(temps<2/np.log(1+np.sqrt(2)), np.clip(1-1/np.sinh(2/temps)**4, 0, None)**(1/8), np.zeros_like(temps))
+	L2 = lambda f: np.mean(f(temperatures_dense)**2)
+	mse_M = L2(lambda temps: M_mean(temps)-onsager(temps))
+	mse_LE = L2(lambda temps: LE_mean(temps)-onsager(temps))
+	var_M = L2(M_std)
+	var_LE = L2(LE_std)
+	# plot
+	plt.figure()
+	plt.plot(temperatures_dense, M_mean(temperatures_dense), color="red", label="M")
+	plt.plot(temperatures_dense, LE_mean(temperatures_dense), color="blue", label="GE-AE")
+	plt.plot(temperatures_dense, onsager(temperatures_dense), color="black", linestyle="dashed")
+	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="black", linestyle="dashed")
+	plt.xlabel(r"$T$")
+	plt.tight_layout()
+	output_dir = "results/vis_encoder/{}/L{:d}".format(J, L)
+	os.makedirs(output_dir, exist_ok=True)
+	plt.savefig(os.path.join(output_dir, "onsager.png"))
+	plt.close()
+	# table
+	with open(os.path.join(output_dir, "onsager.tex"), "w") as fp:
+		fp.write("\\begin{tabular}{ccc} \n")
+		fp.write("\\toprule\n")
+		fp.write("\quad & RMSE w/o var & RMSE w/ var \\\\\n")
+		fp.write("\\midrule\n")
+		fp.write("M & {:.3f} & {:.3f} \\\\\n".format(np.sqrt(mse_M), np.sqrt(mse_M+var_M)))
+		fp.write("GE-AE & {:.3f} & {:.3f} \\\\\n".format(np.sqrt(mse_LE), np.sqrt(mse_LE+var_LE)))
 		fp.write("\\bottomrule\n")
 		fp.write("\\end{tabular}")
 
 
 if __name__ == "__main__":
 
-	print("Plotting . . . ")
-	region_plot("ferromagnetic", 128, N=8)
+	Js = ["ferromagnetic", "antiferromagnetic"]
+	Ls = [16, 32, 64, 128]
+	N = 1025
 
-	print("Tabulating . . . ")
-	region_table("ferromagnetic", 128)
+	for J in Js:
+		print("{}:".format(J))
+		for L in Ls:
+			print("L = {:d} . . . ".format(L))
+			region_plot(J, L, N=N)
+			region_table(J, L)
+			magnitude_plot(J, L, N=N)
+			onsager_comparison(J, L, N=N)
 
 	print("Done!")
