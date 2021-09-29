@@ -103,7 +103,7 @@ def region_table(J, L):
 	with open(os.path.join("results/vis_encoder", J, "L{:d}".format(L), "regions.tex"), "w") as fp:
 		fp.write("\\begin{tabular}{ccc} \n")
 		fp.write("\\toprule\n")
-		fp.write("Area (%) & Grad norm & Grad angle (${}^\circ$) \\\\\n")
+		fp.write("Area (\\%) & Grad norm & Grad angle (${}^\circ$) \\\\\n")
 		fp.write("\\midrule\n")
 		for s in signatures:
 			signs = 1 - 2*s
@@ -169,6 +169,7 @@ def onsager_comparison(J, L, N=1025):
 	plt.plot(temperatures_dense, onsager(temperatures_dense), color="black", linestyle="dashed")
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="black", linestyle="dashed")
 	plt.xlabel(r"$T$")
+	plt.legend(loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10)
 	plt.tight_layout()
 	output_dir = "results/vis_encoder/{}/L{:d}".format(J, L)
 	os.makedirs(output_dir, exist_ok=True)
