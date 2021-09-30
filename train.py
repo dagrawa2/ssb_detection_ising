@@ -51,7 +51,7 @@ torch.manual_seed(2)
 time_start = time.time()
 
 # create results directory
-results_dir = os.path.join(args.results_dir, args.observable_name, "L{:d}".format(args.L))
+results_dir = os.path.join(args.results_dir, args.observable_name, "L{:d}".format(args.L), "N{:d}".format(args.n_train_val))
 os.makedirs(results_dir, exist_ok=args.exist_ok)
 
 # load data
