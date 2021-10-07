@@ -65,8 +65,8 @@ def region_plot(J, L, N=1025):
 	y_boundaries = -( params["linear1.bias"][:,None] + np.outer(params["linear1.weight"][:,0], x) )/params["linear1.weight"][:,[1]]
 	# figure
 	fig, ax = plt.subplots()
-	for y_boundary in y_boundaries:
-		ax.plot(x, y_boundary, color="black", linestyle="dotted")
+#	for y_boundary in y_boundaries:
+#		ax.plot(x, y_boundary, color="black", linestyle="dotted")
 	im = ax.imshow(Z, interpolation="bilinear", origin="lower", cmap=cm.gray, extent=(-1, 1, -1, 1))
 	CS = ax.contour(Z, origin="lower", cmap="flag", extend="both", extent=(-1, 1, -1, 1))
 	# label contour lines
@@ -148,8 +148,8 @@ def onsager_comparison(J, L, N=1025):
 	scale = get_scale(encoder_func, J=J)
 	temperatures = np.load(os.path.join("results", J, "magnetization", "L{:d}".format(L), "measurements.npz"))["temperatures"]
 	temperatures_dense = np.linspace(temperatures.min(), temperatures.max(), N, endpoint=True)
-	measurements_M = np.load(os.path.join("results", J, "magnetization", "L{:d}".format(L), "measurements.npz"))["measurements"].T
-	measurements_LE = np.load(os.path.join("results", J, "latent_equivariant", "L{:d}".format(L), "measurements.npz"))["measurements"].T
+	measurements_M = np.abs( np.load(os.path.join("results", J, "magnetization", "L{:d}".format(L), "measurements.npz"))["measurements"].T )
+	measurements_LE = np.abs( np.load(os.path.join("results", J, "latent_equivariant", "L{:d}".format(L), "measurements.npz"))["measurements"].T )
 	M_mean, M_std = jackknife.calculate_mean_std(jackknife.calculate_samples(measurements_M))
 	LE_mean, LE_std = jackknife.calculate_mean_std(jackknife.calculate_samples(measurements_LE)/scale)
 	M_mean = interp1d(temperatures, M_mean, kind="cubic")
