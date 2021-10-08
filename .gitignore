@@ -1,6 +1,6 @@
 __pycache__
+archive*
 data
 results*
-reports/report*
 out.txt
 test.py
