@@ -105,15 +105,54 @@ def generator_table(results_dir, J, Ls, Ns, generator_type):
 		fp.write("\\end{tabular}")
 
 
+def time_table(results_dir, J, Ls, Ns):
+	output_dir = os.path.join(results_dir, "tables", J)
+	os.makedirs(output_dir, exist_ok=True)
+	with open(os.path.join(output_dir, "time.tex"), "w") as fp:
+#	with open("time.tex", "w") as fp:
+		fp.write("\\begin{{tabular}}{{{}}}\n".format("c"*(1+2*len(Ls))))
+		fp.write("\\toprule\n")
+		fp.write("$L$:")
+		preprocessing_times = []
+		for L in Ls:
+			fp.write(" & \\multicolumn{{2}}{{c}}{{{:d}}}".format(L))
+			times = []
+			for dir in sorted(os.listdir(os.path.join("data", J, "L{:d}".format(L)))):
+				with open(os.path.join("data", J, "L{:d}".format(L), dir, "time_symmetric.txt"), "r") as f:
+					times.append( float(f.read()) )
+			preprocessing_times.append( sum(times) )
+		fp.write(" \\\\\n")
+		fp.write("\\midrule\n")
+		fp.write("$N$")
+		for L in Ls:
+			fp.write(" & AE & GE")
+		fp.write(" \\\\\n")
+		fp.write("\\midrule\n")
+		for N in Ns:
+			fp.write("{:d}".format(N))
+			for (preprocessing_time, L) in zip(preprocessing_times, Ls):
+				for observable_name in ["latent", "latent_equivariant"]:
+					with open(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "N{:d}".format(N), "results.json"), "r") as f:
+						t = json.load(f)["time"]
+					if observable_name == "latent_equivariant":
+						t += preprocessing_time
+					fp.write(" & {:.0f}".format(t/60))
+			fp.write(" \\\\\n")
+		fp.write("\\bottomrule\n")
+		fp.write("\\end{tabular}")
+
+
 if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
 	Ns = [16, 32, 64, 128, 256, 512, 1024, 2048]
 
 	for J in Js:
-		critical_temperature_table("results", J, Ls, Ns, ground_truth=False)
-		critical_temperature_table("results", J, Ls, Ns, ground_truth=True)
-		generator_table("results", J, Ls, Ns, "spatial")
-		generator_table("results", J, Ls, Ns, "internal")
+#		critical_temperature_table("results", J, Ls, Ns, ground_truth=False)
+#		critical_temperature_table("results", J, Ls, Ns, ground_truth=True)
+#		generator_table("results", J, Ls, Ns, "spatial")
+#		generator_table("results", J, Ls, Ns, "internal")
+		time_table("results", J, Ls, Ns)
+
 
 	print("Done!")

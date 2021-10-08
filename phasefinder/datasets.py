@@ -38,6 +38,7 @@ class Ising(object):
 			fp.write("{:f}".format(time.time()-time_start))
 
 	def reduce_checkerboard(self, data_dir, decode=False):
+		time_start = time.time()
 		states = self.load_states(data_dir, decode=decode)
 		assert self.d == 2, "Checkerboard representation is supported only for dimension d = 2."
 		states_symmetric = 2/self.L**2 * np.stack([ \
@@ -46,6 +47,9 @@ class Ising(object):
 		], 1)
 
 		np.save(os.path.join(data_dir, "states_symmetric.npy"), states_symmetric)
+
+		with open(os.path.join(data_dir, "time_symmetric.txt"), "w") as fp:
+			fp.write("{:f}".format(time.time()-time_start))
 
 	def load_args(self, data_dir):
 		with open(os.path.join(data_dir, "args.json"), "r") as fp:
