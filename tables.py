@@ -26,19 +26,20 @@ def critical_temperature_samples(temperatures, u4samples):
 	return tc_samples
 
 
-def critical_temperature_table(results_dir, J, Ls, Ns, temperature_range=None):
+def critical_temperature_table(results_dir, J, Ls, Ns, ground_truth=True, temperature_range=None):
 	output_dir = os.path.join(results_dir, "tables", J)
 	os.makedirs(output_dir, exist_ok=True)
-	with open(os.path.join(output_dir, "tc.tex"), "w") as fp:
+	suffix = "ground" if ground_truth else "magnet"
+	with open(os.path.join(output_dir, "tc_{}.tex".format(suffix)), "w") as fp:
 #	with open("tc.tex", "w") as fp:
 		fp.write("\\begin{{tabular}}{{{}}}\n".format("c"*(1+2*len(Ls))))
 		fp.write("\\toprule\n")
-		fp.write("$L$")
+		fp.write("$L$:")
 		for L in Ls:
 			fp.write(" & \\multicolumn{{2}}{{c}}{{{:d}}}".format(L))
 		fp.write(" \\\\\n")
-		fp.write("M")
 		tc = 2/np.log(1+np.sqrt(2))
+		tc_estimates = []
 		for L in Ls:
 			temperatures = np.load(os.path.join(results_dir, J, "magnetization", "L{:d}".format(L), "measurements.npz"))["temperatures"]
 			u4samples = U4_samples(results_dir, J, "magnetization", L)
@@ -49,8 +50,12 @@ def critical_temperature_table(results_dir, J, Ls, Ns, temperature_range=None):
 				u4samples = u4samples[:,T_min_index:T_max_index+1]
 			tc_samples = critical_temperature_samples(temperatures, u4samples)
 			tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples)
-			fp.write(" & \\multicolumn{{2}}{{c}}{{{:.0f}}}".format(100*(tc_mean-tc)/tc))
-		fp.write(" \\\\\n")
+			tc_estimates.append(tc_mean)
+		if ground_truth:
+			fp.write("M:")
+			for (tc_estimate, L) in zip(tc_estimates, Ls):
+				fp.write(" & \\multicolumn{{2}}{{c}}{{{:.0f}}}".format(100*(tc_estimate-tc)/tc))
+			fp.write(" \\\\\n")
 		fp.write("\\midrule\n")
 		fp.write("$N$")
 		for L in Ls:
@@ -59,7 +64,9 @@ def critical_temperature_table(results_dir, J, Ls, Ns, temperature_range=None):
 		fp.write("\\midrule\n")
 		for N in Ns:
 			fp.write("{:d}".format(N))
-			for L in Ls:
+			for (tc_estimate, L) in zip(tc_estimates, Ls):
+				if not ground_truth:
+					tc = tc_estimate
 				for observable_name in ["latent", "latent_equivariant"]:
 					temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "N{:d}".format(N), "measurements.npz"))["temperatures"]
 					u4samples = U4_samples(results_dir, J, observable_name, L, N)
@@ -104,7 +111,8 @@ if __name__ == "__main__":
 	Ns = [16, 32, 64, 128, 256, 512, 1024, 2048]
 
 	for J in Js:
-		critical_temperature_table("results_new", J, Ls, Ns)
+		critical_temperature_table("results_new", J, Ls, Ns, ground_truth=False)
+		critical_temperature_table("results_new", J, Ls, Ns, ground_truth=True)
 		generator_table("results_new", J, Ls, Ns, "spatial")
 		generator_table("results_new", J, Ls, Ns, "internal")
 

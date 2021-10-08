@@ -33,17 +33,24 @@ class Autoencoder(object):
 			for (X_batch, T_batch) in train_loader:
 				X_batch = X_batch.to(self.device)
 				T_batch = T_batch.to(self.device)
+				Z = self.encoder(X_batch)
+				logits = self.decoder(torch.cat([Z, T_batch], 1))
+				loss = F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2)
 				if self.equivariance_reg > 0 and epoch >= self.equivariance_pre:
-					Z = self.encoder(X_batch)
-					Z_flip = self.encoder(torch.flip(X_batch, [1]))
-					Z_neg = self.encoder(-X_batch)
-					logits = self.decoder(torch.cat([Z, T_batch], 1))
-					loss = F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2) + self.equivariance_reg*( \
-						1 - (Z*Z_flip).sum()**2/(Z.pow(2).sum()*Z_flip.pow(2).sum()) \
-						+ 1 - (Z*Z_neg).sum()**2/(Z.pow(2).sum()*Z_neg.pow(2).sum()) )
-				else:
-					logits = self.decoder(torch.cat([self.encoder(X_batch), T_batch], 1))
-					loss = F.binary_cross_entropy_with_logits(logits, (X_batch+1)/2)
+					transforms = [ \
+						lambda x: torch.flip(x, [1]), \
+						lambda x: -x \
+					]
+					cos_similarities = []
+					for transform in transforms:
+						Z_transformed = self.encoder(transform(X_batch))
+						Z_square_norm = Z.pow(2).sum()
+						Z_transformed_square_norm = Z_transformed.pow(2).sum()
+						loss += self.equivariance_reg*( \
+							(1 - Z_transformed_square_norm/Z_square_norm)**2 + \
+							1 - (Z*Z_transformed).sum()**2/(Z_square_norm*Z_transformed_square_norm) )
+						cos_similarities.append( (Z*Z_transformed).sum().unsqueeze(0)/torch.sqrt(Z_square_norm*Z_transformed_square_norm) )
+					loss += 1 + torch.cat(cos_similarities, 0).min()
 				loss.backward()
 				self.optimizer.step()
 				self.optimizer.zero_grad()
