@@ -26,7 +26,7 @@ do
 				--val_size=0.5 \
 				--val_batch_size=2048 \
 				--val_interval=1 \
-				--results_dir=results_new/$J \
+				--results_dir=results/$J \
 				--observable_name=latent_equivariant \
 				--device=cpu \
 				--symmetric \
@@ -54,7 +54,7 @@ do
 				--val_size=0.5 \
 				--val_batch_size=2048 \
 				--val_interval=1 \
-				--results_dir=results_new/$J \
+				--results_dir=results/$J \
 				--observable_name=latent \
 				--device=cpu
 		done

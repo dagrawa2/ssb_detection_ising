@@ -111,9 +111,9 @@ if __name__ == "__main__":
 	Ns = [16, 32, 64, 128, 256, 512, 1024, 2048]
 
 	for J in Js:
-		critical_temperature_table("results_new", J, Ls, Ns, ground_truth=False)
-		critical_temperature_table("results_new", J, Ls, Ns, ground_truth=True)
-		generator_table("results_new", J, Ls, Ns, "spatial")
-		generator_table("results_new", J, Ls, Ns, "internal")
+		critical_temperature_table("results", J, Ls, Ns, ground_truth=False)
+		critical_temperature_table("results", J, Ls, Ns, ground_truth=True)
+		generator_table("results", J, Ls, Ns, "spatial")
+		generator_table("results", J, Ls, Ns, "internal")
 
 	print("Done!")
