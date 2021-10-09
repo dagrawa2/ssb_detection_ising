@@ -75,41 +75,31 @@ def critical_temperature_samples(temperatures, u4samples):
 	return tc_samples
 
 
-def calculate_critical_temperatures(results_dir, J, Ls, Ns, temperature_range=None):
-	output_dict = {"L": Ls, "M_mean": [], "M_std": [], "N": Ns}
-	for L in Ls:
-		for model in ["AE", "GE"]:
-			for stat in ["mean", "std"]:
-				output_dict["L{:d}_{}_{}".format(L, model, stat)] = []
+def calculate_critical_temperatures(results_dir, J, Ls, Ns):
+	output_dict = {"L{:d}".format(L): {"Ns": Ns, "M": {}, "AE": {}, "GE": {}} for L in Ls}
 	for L in Ls:
 		temperatures = np.load(os.path.join(results_dir, J, "magnetization", "L{:d}".format(L), "measurements.npz"))["temperatures"]
 		u4samples = U4_samples(results_dir, J, "magnetization", L)
-		if temperature_range is not None:
-			T_within_range_indices = np.where(np.logical_and(temperatures>=temperature_range[0], temperatures<=temperature_range[1]))[0]
-			T_min_index, T_max_index = T_within_range_indices.min(), T_within_range_indices.max()
-			temperatures = temperatures[T_min_index:T_max_index+1]
-			u4samples = u4samples[:,T_min_index:T_max_index+1]
-		tc_samples = critical_temperature_samples(temperatures, u4samples)
-		tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples)
-		output_dict["M_mean"].append(tc_mean)
-		output_dict["M_std"].append(tc_std)
+		tc_samples_M = critical_temperature_samples(temperatures, u4samples)
+		tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples_M)
+		output_dict["L{:d}".format(L)]["M"]["mean"] = float(tc_mean)
+		output_dict["L{:d}".format(L)]["M"]["std"] = float(tc_std)
+		for model in ["AE", "GE"]:
+			for stats in ["means", "stds"]:
+				output_dict["L{:d}".format(L)][model][stats] = []
 		for N in Ns:
 			for (model, observable_name) in [("AE", "latent"), ("GE", "latent_equivariant")]:
 				temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "N{:d}".format(N), "measurements.npz"))["temperatures"]
 				u4samples = U4_samples(results_dir, J, observable_name, L, N)
-				if temperature_range is not None:
-					T_within_range_indices = np.where(np.logical_and(temperatures>=temperature_range[0], temperatures<=temperature_range[1]))[0]
-					T_min_index, T_max_index = T_within_range_indices.min(), T_within_range_indices.max()
-					temperatures = temperatures[T_min_index:T_max_index+1]
-					u4samples = u4samples[:,T_min_index:T_max_index+1]
 				tc_samples = critical_temperature_samples(temperatures, u4samples)
-				tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples)
-				output_dict["L{:d}_{}_mean".format(L, model)].append(tc_mean)
-				output_dict["L{:d}_{}_std".format(L, model)].append(tc_std)
-	output_dict = {key: np.asarray(value) for (key, value) in output_dict.items()}
+				tc_samples_APE = 100*np.abs(tc_samples/tc_samples_M - 1)
+				tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples_APE)
+				output_dict["L{:d}".format(L)][model]["means"].append( float(tc_mean) )
+				output_dict["L{:d}".format(L)][model]["stds"].append( float(tc_std) )
 	output_dir = os.path.join(results_dir, "processed", J)
 	os.makedirs(output_dir, exist_ok=True)
-	np.savez(os.path.join(output_dir, "tc.npz"), **output_dict)
+	with open(os.path.join(output_dir, "tc.json"), "w") as fp:
+		json.dump(output_dict, fp, indent=2)
 
 
 ### process execution times
@@ -177,20 +167,20 @@ if __name__ == "__main__":
 #		for L in Ls:
 #			gather_magnetizations("data", "results", J, L)
 
-#	print("Calculating stats . . . ")
-#	for J in Js:
-#		calculate_stats("results", J, "magnetization", 128)
-#		calculate_stats("results", J, "latent", 128, N=2048)
-#		calculate_stats("results", J, "latent_equivariant", 128, N=2048)
+	print("Calculating stats . . . ")
+	for J in Js:
+		calculate_stats("results", J, "magnetization", 128)
+		calculate_stats("results", J, "latent", 128, N=2048)
+		calculate_stats("results", J, "latent_equivariant", 128, N=2048)
 
-#	print("Calculating critical temperatures . . . ")
-#	for J in Js:
-#		calculate_critical_temperatures("results", J, Ls, Ns)
+	print("Calculating critical temperatures . . . ")
+	for J in Js:
+		calculate_critical_temperatures("results", J, Ls, Ns)
 
 	print("Calculating execution times . . . ")
 	calculate_times("results", Js, Ls, Ns)
 
-#	print("Calculating symmetry generators . . . ")
-#	calculate_generators("results", Js, Ls, Ns)
+	print("Calculating symmetry generators . . . ")
+	calculate_generators("results", Js, Ls, Ns)
 
 	print("Done!")

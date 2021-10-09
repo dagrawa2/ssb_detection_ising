@@ -47,6 +47,25 @@ def plot_stats(results_dir, J, observable_name, L, N=None):
 	plt.close()
 
 
+def plot_critical_temperatures(results_dir, J, L):
+	output_dir = os.path.join(results_dir, "plots", J, "L{:d}".format(L))
+	os.makedirs(output_dir, exist_ok=True)
+	with open(os.path.join(results_dir, "processed", J, "tc.json"), "r") as fp:
+		data = json.load(fp)["L{:d}".format(L)]
+	y = np.arange(len(data["Ns"]))
+	width = 0.35
+	plt.figure()
+	plt.barh(y, data["AE"]["means"], width, xerr=data["AE"]["stds"], color="red", label="Baseline encoder")
+	plt.barh(y, data["GE"]["means"], width, xerr=data["GE"]["stds"], color="blue", label="GE-encoder")
+	plt.legend(loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10)
+	plt.xlabel("Abs. percent error (%)", fontsize=12)
+	plt.ylabel("Samples per temp. (N)", fontsize=12)
+	plt.yticks(y, data["Ns"])
+	plt.tight_layout()
+	plt.savefig(os.path.join(output_dir, "tc.png"))
+	plt.close()
+
+
 def plot_times(results_dir):
 	output_dir = os.path.join(results_dir, "plots")
 	os.makedirs(output_dir, exist_ok=True)
@@ -68,12 +87,18 @@ def plot_times(results_dir):
 
 if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
+	Ls = [16, 32, 64, 128]
 
 	print("Plotting statistics . . . ")
 	for J in Js:
 		plot_stats("results", J, "magnetization", 128)
 		plot_stats("results", J, "latent", 128, N=2048)
 		plot_stats("results", J, "latent_equivariant", 128, N=2048)
+
+	print("Plotting critical temperature estimates . . . ")
+	for J in Js:
+		for L in Ls:
+			plot_critical_temperatures("results", J, L)
 
 	print("Plotting times . . . ")
 	plot_times("results")
