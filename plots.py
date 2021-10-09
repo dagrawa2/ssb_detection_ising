@@ -85,6 +85,29 @@ def plot_times(results_dir):
 	plt.close()
 
 
+def tabulate_generators(results_dir, Js):
+	output_dir = os.path.join(results_dir, "plots")
+	os.makedirs(output_dir, exist_ok=True)
+	with open(os.path.join(results_dir, "processed", "generators.json"), "r") as fp:
+		gens = json.load(fp)
+	generator_types = ["spatial", "internal"]
+	stds = [gens[J][generator_type]["std"] for J in Js for generator_type in generator_types]
+	max_precision = 1 + max([1-int(np.log10(s)) for s in stds	])
+	with open(os.path.join(output_dir, "generators.tex"), "w") as fp:
+		fp.write("\\begin{{tabular}}{{cS[table-format=2.{:d}(2),table-align-uncertainty=true]S[table-format=2.{:d}(2),table-align-uncertainty=true]}}\n".format(max_precision, max_precision))
+		fp.write("\\toprule\n")
+		fp.write("\\quad & {Spatial} & {Internal} \\\\\n")
+		fp.write("\\midrule\n")
+		for J in Js:
+			fp.write(J.capitalize())
+			for generator_type in generator_types:
+				precision = 2-int(np.log10(gens[J][generator_type]["std"]))
+				fp.write(" & {{:.{:d}f}}\\pm {{:.{:d}f}}".format(precision, precision).format(gens[J][generator_type]["mean"], gens[J][generator_type]["std"]))
+			fp.write(" \\\\\n")
+		fp.write("\\bottomrule\n")
+		fp.write("\\end{tabular}")
+
+
 if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
@@ -102,5 +125,8 @@ if __name__ == "__main__":
 
 	print("Plotting times . . . ")
 	plot_times("results")
+
+	print("Tabulating generators . . . ")
+	tabulate_generators("results", Js)
 
 	print("Done!")
