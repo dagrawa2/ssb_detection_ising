@@ -80,8 +80,8 @@ def calculate_critical_temperatures(results_dir, J, Ls, Ns, remove_bias=True):
 	for L in Ls:
 		temperatures = np.load(os.path.join(results_dir, J, "magnetization", "L{:d}".format(L), "measurements.npz"))["temperatures"]
 		u4samples = U4_samples(results_dir, J, "magnetization", L)
-		tc_samples_M = critical_temperature_samples(temperatures, u4samples)
-		tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples_M, remove_bias=remove_bias)
+		tc_samples = critical_temperature_samples(temperatures, u4samples)
+		tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples, remove_bias=remove_bias)
 		output_dict["L{:d}".format(L)]["M"]["mean"] = float(tc_mean)
 		output_dict["L{:d}".format(L)]["M"]["std"] = float(tc_std)
 		for model in ["AE", "GE"]:
@@ -92,8 +92,7 @@ def calculate_critical_temperatures(results_dir, J, Ls, Ns, remove_bias=True):
 				temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "N{:d}".format(N), "measurements.npz"))["temperatures"]
 				u4samples = U4_samples(results_dir, J, observable_name, L, N)
 				tc_samples = critical_temperature_samples(temperatures, u4samples)
-				tc_samples_APE = 100*np.abs(tc_samples/tc_samples_M - 1)
-				tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples_APE, remove_bias=remove_bias)
+				tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples, remove_bias=remove_bias)
 				output_dict["L{:d}".format(L)][model]["means"].append( float(tc_mean) )
 				output_dict["L{:d}".format(L)][model]["stds"].append( float(tc_std) )
 	output_dir = os.path.join(results_dir, "processed", J)
