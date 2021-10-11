@@ -50,7 +50,7 @@ def plot_stats(results_dir, J, observable_name, L, N=None):
 def plot_critical_temperatures(results_dir, J, L, remove_bias=True, temperature_ranges=None):
 	output_dir = os.path.join(results_dir, "plots", J, "L{:d}".format(L))
 	os.makedirs(output_dir, exist_ok=True)
-	suffix = "_biased" if remove_bias else ""
+	suffix = "_biased" if not remove_bias else ""
 	with open(os.path.join(results_dir, "processed", J, "tc{}.json".format(suffix)), "r") as fp:
 		data = json.load(fp)["L{:d}".format(L)]
 	y = np.arange(len(data["Ns"]))
