@@ -47,10 +47,11 @@ def plot_stats(results_dir, J, observable_name, L, N=None):
 	plt.close()
 
 
-def plot_critical_temperatures(results_dir, J, L):
+def plot_critical_temperatures(results_dir, J, L, remove_bias=True):
 	output_dir = os.path.join(results_dir, "plots", J, "L{:d}".format(L))
 	os.makedirs(output_dir, exist_ok=True)
-	with open(os.path.join(results_dir, "processed", J, "tc.json"), "r") as fp:
+	suffix = "_biased" if remove_bias else ""
+	with open(os.path.join(results_dir, "processed", J, "tc{}.json".format(suffix)), "r") as fp:
 		data = json.load(fp)["L{:d}".format(L)]
 	y = np.arange(len(data["Ns"]))
 	width = 0.35
@@ -62,7 +63,7 @@ def plot_critical_temperatures(results_dir, J, L):
 	plt.ylabel("Samples per temp. (N)", fontsize=12)
 	plt.yticks(y, data["Ns"])
 	plt.tight_layout()
-	plt.savefig(os.path.join(output_dir, "tc.png"))
+	plt.savefig(os.path.join(output_dir, "tc{}.png".format(suffix)))
 	plt.close()
 
 
@@ -121,7 +122,8 @@ if __name__ == "__main__":
 	print("Plotting critical temperature estimates . . . ")
 	for J in Js:
 		for L in Ls:
-			plot_critical_temperatures("results", J, L)
+			for remove_bias in [True, False]:
+				plot_critical_temperatures("results", J, L, remove_bias=remove_bias)
 
 	print("Plotting times . . . ")
 	plot_times("results")

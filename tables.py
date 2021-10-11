@@ -26,7 +26,7 @@ def critical_temperature_samples(temperatures, u4samples):
 	return tc_samples
 
 
-def critical_temperature_table(results_dir, J, Ls, Ns, ground_truth=True, temperature_range=None):
+def critical_temperature_table(results_dir, J, Ls, Ns, ground_truth=True, remove_bias=True, temperature_range=None):
 	output_dir = os.path.join(results_dir, "tables", J)
 	os.makedirs(output_dir, exist_ok=True)
 	suffix = "ground" if ground_truth else "magnet"
@@ -49,7 +49,7 @@ def critical_temperature_table(results_dir, J, Ls, Ns, ground_truth=True, temper
 				temperatures = temperatures[T_min_index:T_max_index+1]
 				u4samples = u4samples[:,T_min_index:T_max_index+1]
 			tc_samples = critical_temperature_samples(temperatures, u4samples)
-			tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples)
+			tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples, remove_bias=remove_bias)
 			tc_estimates.append(tc_mean)
 		if ground_truth:
 			fp.write("M:")
@@ -76,7 +76,7 @@ def critical_temperature_table(results_dir, J, Ls, Ns, ground_truth=True, temper
 						temperatures = temperatures[T_min_index:T_max_index+1]
 						u4samples = u4samples[:,T_min_index:T_max_index+1]
 					tc_samples = critical_temperature_samples(temperatures, u4samples)
-					tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples)
+					tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples, remove_bias=remove_bias)
 					fp.write(" & {:.0f}".format(100*(tc_mean-tc)/tc))
 			fp.write(" \\\\\n")
 		fp.write("\\bottomrule\n")
