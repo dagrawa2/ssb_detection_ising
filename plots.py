@@ -47,60 +47,28 @@ def plot_stats(results_dir, J, observable_name, L, N=None):
 	plt.close()
 
 
-def plot_critical_temperatures(results_dir, J, L, remove_bias=True, temperature_ranges=None):
+def plot_critical_temperatures(results_dir, J, L, remove_bias=True):
 	output_dir = os.path.join(results_dir, "plots", J, "L{:d}".format(L))
 	os.makedirs(output_dir, exist_ok=True)
 	suffix = "_biased" if not remove_bias else ""
 	with open(os.path.join(results_dir, "processed", J, "tc{}.json".format(suffix)), "r") as fp:
 		data = json.load(fp)["L{:d}".format(L)]
+	x_min = np.round(np.array(data["AE"]["means"]+data["GE"]["means"]).min()-0.1, 1)
+	x_max = np.round(np.concatenate([np.array(data[obs]["means"])+np.array(data[obs]["stds"]) for obs in ["AE", "GE"]], 0).max()+0.1, 1)
 	y = np.arange(len(data["Ns"]))
 	width = 0.35
-	if temperature_ranges is None:
-		plt.figure()
-		plt.barh(y, data["AE"]["means"], width, xerr=data["AE"]["stds"], color="red", label="Baseline encoder")
-		plt.barh(y, data["GE"]["means"], width, xerr=data["GE"]["stds"], color="blue", label="GE-encoder")
-		plt.axvline(x=2/np.log(1+np.sqrt(2)), color="green", linestyle="dashed")
-		plt.axvline(x=data["M"]["mean"], color="orange", linestyle="dashed")
-		plt.axvline(x=data["M"]["mean"]-data["M"]["std"], color="orange", linestyle="dotted")
-		plt.axvline(x=data["M"]["mean"]+data["M"]["std"], color="orange", linestyle="dotted")
-		plt.legend(loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10)
-		plt.xlabel(r"$T$", fontsize=12)
-		plt.ylabel("Samples per temperature (N)", fontsize=12)
-		plt.yticks(y, data["Ns"])
-	else:
-		f, (ax, ax2) = plt.subplots(1, 2, sharey=True)
-		# plot the data on both axes
-		for a in [ax, ax2]:
-			a.barh(y, data["AE"]["means"], width, xerr=data["AE"]["stds"], color="red", label="Baseline encoder")
-			a.barh(y, data["GE"]["means"], width, xerr=data["GE"]["stds"], color="blue", label="GE-encoder")
-			a.axvline(x=2/np.log(1+np.sqrt(2)), color="green", linestyle="dashed")
-			a.axvline(x=data["M"]["mean"], color="orange", linestyle="dashed")
-			a.axvline(x=data["M"]["mean"]-data["M"]["std"], color="orange", linestyle="dotted")
-			a.axvline(x=data["M"]["mean"]+data["M"]["std"], color="orange", linestyle="dotted")
-		# zoom-in / limit the view to different portions of the data
-		ax.set_xlim(temperature_ranges[0])
-		ax2.set_xlim(temperature_ranges[1])
-		# hide the spines between ax and ax2
-		ax.spines["right"].set_visible(False)
-		ax2.spines["left"].set_visible(False)
-		ax.yaxis.tick_left()
-		ax.tick_params(labelleft=False)  # don't put tick labels on the left
-		ax2.yaxis.tick_right()
-		# add lines to indicate axis break
-		d = .015  # how big to make the diagonal lines in axes coordinates
-		# arguments to pass to plot, just so we don't keep repeating them
-		kwargs = dict(transform=ax2.transAxes, color='k', clip_on=False)
-		ax2.plot((-d, +d), (-d, +d), **kwargs)        # bottom diagonal
-		ax2.plot((-d, +d), (1-d, 1+d), **kwargs)  # top diagonal
-		kwargs.update(transform=ax.transAxes)  # switch to the left axes
-		ax.plot((1-d, 1+d), (-d, +d), **kwargs)  # bottom diagonal
-		ax.plot((1-d, 1+d), (1-d, 1+d), **kwargs)  # top diagonal
-		# add remaining plot elements
-		ax2.legend(loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10)
-		ax.set_xlabel(r"$T$", fontsize=12)
-		ax.set_ylabel("Samples per temperature (N)", fontsize=12)
-		ax.set_yticks(y)
-		ax.set_yticklabels(data["Ns"])
+	plt.figure()
+	plt.barh(y-width/2, data["AE"]["means"], width, xerr=data["AE"]["stds"], color="red", label="Baseline encoder")
+	plt.barh(y+width/2, data["GE"]["means"], width, xerr=data["GE"]["stds"], color="blue", label="GE-encoder")
+	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="green", linestyle="dashed")
+	plt.axvline(x=data["M"]["mean"], color="orange", linestyle="dashed")
+	plt.axvline(x=data["M"]["mean"]-data["M"]["std"], color="orange", linestyle="dotted")
+	plt.axvline(x=data["M"]["mean"]+data["M"]["std"], color="orange", linestyle="dotted")
+	plt.legend(loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10)
+	plt.xlim(x_min, x_max)
+	plt.xlabel(r"$T$", fontsize=12)
+	plt.ylabel(r"Samples per temperature ($N$)", fontsize=12)
+	plt.yticks(y, data["Ns"])
 	plt.tight_layout()
 	plt.savefig(os.path.join(output_dir, "tc{}.png".format(suffix)))
 	plt.close()
@@ -159,13 +127,9 @@ if __name__ == "__main__":
 		plot_stats("results", J, "latent_equivariant", 128, N=2048)
 
 	print("Plotting critical temperature estimates . . . ")
-	tc = 2/np.log(1+np.sqrt(2))
-	f = lambda error: tc*(1+error)/100
-	temperature_ranges = {"ferromagnetic": [None, None, None, [(None, f(4.0)), (f(7.0), None)]], \
-		"antiferromagnetic": [None, None, [(None, f(4.5)), (f(6.5), None)], None]}
 	for J in Js:
-		for (i, L) in enumerate(Ls):
-			plot_critical_temperatures("results", J, L, remove_bias=False, temperature_ranges=temperature_ranges[J][i])
+		for L in Ls:
+			plot_critical_temperatures("results", J, L, remove_bias=False)
 
 	print("Plotting times . . . ")
 	plot_times("results")
