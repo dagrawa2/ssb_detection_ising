@@ -22,8 +22,8 @@ torch.manual_seed(2)
 def lrelu(X):
 	return np.where(X>=0, X, 0.01*X)
 
-def load_encoder_params(J, L):
-	params = torch.load(os.path.join("results", J, "latent_equivariant", "L{:d}".format(L), "encoder.pth"))
+def load_encoder_params(J, L, N):
+	params = torch.load(os.path.join("results", J, "latent_equivariant", "L{:d}".format(L), "N{:d}".format(N), "encoder.pth"))
 	params = {n: p.numpy() for (n, p) in params.items()}
 	params["linear2.weight"] = params["linear2.weight"].squeeze(0)
 	params["linear2.bias"] = params["linear2.bias"].item()
@@ -53,44 +53,44 @@ def rescale(params, encoder_func, J="ferromagnetic"):
 	return params, func	
 
 
-def region_plot(J, L, N=1025):
-	params = load_encoder_params(J, L)
-	encoder_func = make_encoder_func(params)
-	params, encoder_func = rescale(params, encoder_func, J=J)
-	x = np.linspace(-1, 1, N, endpoint=True)
-	y = np.linspace(-1, 1, N, endpoint=True)
-	X, Y = np.meshgrid(x, y)
-	Z = encoder_func( np.stack([X, Y], 2).reshape((-1, 2)) )
-	Z = Z.reshape((N, N))
-	y_boundaries = -( params["linear1.bias"][:,None] + np.outer(params["linear1.weight"][:,0], x) )/params["linear1.weight"][:,[1]]
-	# figure
-	fig, ax = plt.subplots()
-#	for y_boundary in y_boundaries:
-#		ax.plot(x, y_boundary, color="black", linestyle="dotted")
-	im = ax.imshow(Z, interpolation="bilinear", origin="lower", cmap=cm.gray, extent=(-1, 1, -1, 1))
-	CS = ax.contour(Z, origin="lower", cmap="flag", extend="both", extent=(-1, 1, -1, 1))
-	# label contour lines
-	ax.clabel(CS, inline=True, fontsize=10)
-	# make a colorbar for the contour lines
-	CB = fig.colorbar(CS, shrink=0.8)
-	# We can still add a colorbar for the image, too.
-	CBI = fig.colorbar(im, orientation="horizontal", shrink=0.8)
-	# This makes the original colorbar look a bit out of place,
-	# so let's improve its position.
-	l, b, w, h = ax.get_position().bounds
-	ll, bb, ww, hh = CB.ax.get_position().bounds
-	CB.ax.set_position([ll, b + 0.1*h, ww, h*0.8])
-	# titles
-	ax.set_xlabel("Black magnetization")
-	ax.set_ylabel("White magnetization")
-	output_dir = "results/vis_encoder/{}/L{:d}".format(J, L)
-	os.makedirs(output_dir, exist_ok=True)
-	plt.savefig(os.path.join(output_dir, "regions.png"))
-	plt.close()
+#def region_plot(J, L, N=1025):
+#	params = load_encoder_params(J, L)
+#	encoder_func = make_encoder_func(params)
+#	params, encoder_func = rescale(params, encoder_func, J=J)
+#	x = np.linspace(-1, 1, N, endpoint=True)
+#	y = np.linspace(-1, 1, N, endpoint=True)
+#	X, Y = np.meshgrid(x, y)
+#	Z = encoder_func( np.stack([X, Y], 2).reshape((-1, 2)) )
+#	Z = Z.reshape((N, N))
+#	y_boundaries = -( params["linear1.bias"][:,None] + np.outer(params["linear1.weight"][:,0], x) )/params["linear1.weight"][:,[1]]
+#	# figure
+#	fig, ax = plt.subplots()
+##	for y_boundary in y_boundaries:
+##		ax.plot(x, y_boundary, color="black", linestyle="dotted")
+#	im = ax.imshow(Z, interpolation="bilinear", origin="lower", cmap=cm.gray, extent=(-1, 1, -1, 1))
+#	CS = ax.contour(Z, origin="lower", cmap="flag", extend="both", extent=(-1, 1, -1, 1))
+#	# label contour lines
+#	ax.clabel(CS, inline=True, fontsize=10)
+#	# make a colorbar for the contour lines
+#	CB = fig.colorbar(CS, shrink=0.8)
+#	# We can still add a colorbar for the image, too.
+#	CBI = fig.colorbar(im, orientation="horizontal", shrink=0.8)
+#	# This makes the original colorbar look a bit out of place,
+#	# so let's improve its position.
+#	l, b, w, h = ax.get_position().bounds
+#	ll, bb, ww, hh = CB.ax.get_position().bounds
+#	CB.ax.set_position([ll, b + 0.1*h, ww, h*0.8])
+#	# titles
+#	ax.set_xlabel("Black magnetization")
+#	ax.set_ylabel("White magnetization")
+#	output_dir = "results/vis_encoder/{}/L{:d}".format(J, L)
+#	os.makedirs(output_dir, exist_ok=True)
+#	plt.savefig(os.path.join(output_dir, "regions.png"))
+#	plt.close()
 
 
-def region_table(J, L):
-	params = load_encoder_params(J, L)
+def region_table(J, L, N):
+	params = load_encoder_params(J, L, N)
 	encoder_func = make_encoder_func(params)
 	params, encoder_func = rescale(params, encoder_func, J=J)
 	A = params["linear2.weight"][:,None]*params["linear1.weight"]
@@ -98,9 +98,9 @@ def region_table(J, L):
 	A_borders = np.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
 	b_borders = np.array([1, 1, 1, 1])
 	signatures = list(map(lambda s: np.array(list(s)), itertools.product([0, 1], repeat=4)))
-	output_dir = "results/vis_encoder/{}/L{:d}".format(J, L)
+	output_dir = "results/vis_encoder/{}/L{:d}/N{:d}".format(J, L, N)
 	os.makedirs(output_dir, exist_ok=True)
-	with open(os.path.join("results/vis_encoder", J, "L{:d}".format(L), "regions.tex"), "w") as fp:
+	with open(os.path.join(output_dir, "regions.tex"), "w") as fp:
 		fp.write("\\begin{tabular}{ccc} \n")
 		fp.write("\\toprule\n")
 		fp.write("Area (\\%) & Grad norm & Grad angle (${}^\circ$) \\\\\n")
@@ -123,33 +123,33 @@ def region_table(J, L):
 		fp.write("\\end{tabular}")
 
 
-def magnitude_plot(J, L, N=1025):
-	params = load_encoder_params(J, L)
+def magnitude_plot(J, L, N, n_points=1025):
+	params = load_encoder_params(J, L, N)
 	encoder_func = make_encoder_func(params)
 	params, encoder_func = rescale(params, encoder_func, J=J)
 	lattice = np.array([1, 1]) if J == "ferromagnetic" \
 		else np.array([1, -1])
-	x = np.linspace(-1, 1, N, endpoint=True)
+	x = np.linspace(-1, 1, n_points, endpoint=True)
 	y = encoder_func(np.outer(x, lattice))
 	plt.figure()
 	plt.plot(x, y, color="black")
 	plt.xlabel("Magnetization")
-	plt.ylabel("Encoding")
+	plt.ylabel("Encoder")
 	plt.tight_layout()
-	output_dir = "results/vis_encoder/{}/L{:d}".format(J, L)
+	output_dir = "results/vis_encoder/{}/L{:d}/N{:d}".format(J, L, N)
 	os.makedirs(output_dir, exist_ok=True)
 	plt.savefig(os.path.join(output_dir, "magnitude.png"))
 	plt.close()
 
 
-def onsager_comparison(J, L, N=1025):
-	params = load_encoder_params(J, L)
+def onsager_comparison(J, L, N, n_points=1025):
+	params = load_encoder_params(J, L, N)
 	encoder_func = make_encoder_func(params)
 	scale = get_scale(encoder_func, J=J)
 	temperatures = np.load(os.path.join("results", J, "magnetization", "L{:d}".format(L), "measurements.npz"))["temperatures"]
-	temperatures_dense = np.linspace(temperatures.min(), temperatures.max(), N, endpoint=True)
+	temperatures_dense = np.linspace(temperatures.min(), temperatures.max(), n_points, endpoint=True)
 	measurements_M = np.abs( np.load(os.path.join("results", J, "magnetization", "L{:d}".format(L), "measurements.npz"))["measurements"].T )
-	measurements_LE = np.abs( np.load(os.path.join("results", J, "latent_equivariant", "L{:d}".format(L), "measurements.npz"))["measurements"].T )
+	measurements_LE = np.abs( np.load(os.path.join("results", J, "latent_equivariant", "L{:d}".format(L), "N{:d}".format(N), "measurements.npz"))["measurements"].T )
 	M_mean, M_std = jackknife.calculate_mean_std(jackknife.calculate_samples(measurements_M))
 	LE_mean, LE_std = jackknife.calculate_mean_std(jackknife.calculate_samples(measurements_LE)/scale)
 	M_mean = interp1d(temperatures, M_mean, kind="cubic")
@@ -164,14 +164,14 @@ def onsager_comparison(J, L, N=1025):
 	var_LE = L2(LE_std)
 	# plot
 	plt.figure()
-	plt.plot(temperatures_dense, M_mean(temperatures_dense), color="red", label="M")
-	plt.plot(temperatures_dense, LE_mean(temperatures_dense), color="blue", label="GE-AE")
-	plt.plot(temperatures_dense, onsager(temperatures_dense), color="black", linestyle="dashed")
-	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="black", linestyle="dashed")
+	plt.plot(temperatures_dense, M_mean(temperatures_dense), color="red", label="Magnetization")
+	plt.plot(temperatures_dense, LE_mean(temperatures_dense), color="blue", label="GE-encoder")
+	plt.plot(temperatures_dense, onsager(temperatures_dense), color="black", linestyle="dashed", label="Onsager")
+	plt.axvline(x=2/np.log(1+np.sqrt(2)), color="green", linestyle="dashed")
 	plt.xlabel(r"$T$")
 	plt.legend(loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10)
 	plt.tight_layout()
-	output_dir = "results/vis_encoder/{}/L{:d}".format(J, L)
+	output_dir = "results/vis_encoder/{}/L{:d}/N{:d}".format(J, L, N)
 	os.makedirs(output_dir, exist_ok=True)
 	plt.savefig(os.path.join(output_dir, "onsager.png"))
 	plt.close()
@@ -190,16 +190,19 @@ def onsager_comparison(J, L, N=1025):
 if __name__ == "__main__":
 
 	Js = ["ferromagnetic", "antiferromagnetic"]
-	Ls = [16, 32, 64, 128]
-	N = 1025
+	Ls = [128]
+	Ns = [2048]
+	n_points = 1025
 
 	for J in Js:
 		print("{}:".format(J))
 		for L in Ls:
 			print("L = {:d} . . . ".format(L))
-			region_plot(J, L, N=N)
-			region_table(J, L)
-			magnitude_plot(J, L, N=N)
-			onsager_comparison(J, L, N=N)
+			for N in Ns:
+				print("N = {:d} . . . ".format(N))
+#				region_plot(J, L, N=N)
+				region_table(J, L, N)
+				magnitude_plot(J, L, N, n_points=n_points)
+				onsager_comparison(J, L, N, n_points=n_points)
 
 	print("Done!")
