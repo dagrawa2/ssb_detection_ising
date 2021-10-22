@@ -30,8 +30,8 @@ def critical_temperature_table(results_dir, J, Ls, Ns, ground_truth=True, remove
 	output_dir = os.path.join(results_dir, "tables", J)
 	os.makedirs(output_dir, exist_ok=True)
 	suffix = "ground" if ground_truth else "magnet"
-#	with open(os.path.join(output_dir, "tc_{}.tex".format(suffix)), "w") as fp:
-	with open("out.txt", "w") as fp:
+	with open(os.path.join(output_dir, "tc_{}.tex".format(suffix)), "w") as fp:
+#	with open("tc.tex", "w") as fp:
 		fp.write("\\begin{{tabular}}{{{}}}\n".format("c"*(1+2*len(Ls))))
 		fp.write("\\toprule\n")
 		fp.write("$L$:")
@@ -145,17 +145,14 @@ def time_table(results_dir, J, Ls, Ns):
 if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
-	Ns = [0, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
+	Ns = [16, 32, 64, 128, 256, 512, 1024, 2048]
 
-	"""
 	for J in Js:
 		critical_temperature_table("results", J, Ls, Ns, ground_truth=False)
 		critical_temperature_table("results", J, Ls, Ns, ground_truth=True)
 		generator_table("results", J, Ls, Ns, "spatial")
 		generator_table("results", J, Ls, Ns, "internal")
 		time_table("results", J, Ls, Ns)
-	"""
 
-	critical_temperature_table("results", "ferromagnetic", Ls, Ns, ground_truth=True, remove_bias=False)
 
 	print("Done!")
