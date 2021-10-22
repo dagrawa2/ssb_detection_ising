@@ -2,6 +2,7 @@ import os
 import json
 import numpy as np
 from scipy.interpolate import CubicSpline
+from scipy.linalg import lstsq
 
 from phasefinder import jackknife
 from phasefinder.datasets import Ising
@@ -75,6 +76,23 @@ def critical_temperature_samples(temperatures, u4samples):
 	return tc_samples
 
 
+def lstsq_samples(x, y_samples, weights=None):
+	ones = np.ones((x.shape[0], 1))
+	if weights is None:
+		weights = ones
+	if weights.ndim == 1:
+		weights = weights[:,None]
+	if x.ndim == 1:
+		x = x[:,None]
+	x = np.concatenate((ones, x), 1)
+	fit_samples = lstsq(x*weights, y_samples*weights)[0]
+	yhat_samples = x.dot(fit_samples)
+	y_samples_centered = y_samples - y_samples.mean(0, keepdims=True)
+	yhat_samples_centered = yhat_samples - yhat_samples.mean(0, keepdims=True)
+	r2_samples = (y_samples_centered*yhat_samples_centered).sum(0)**2/( np.sum(y_samples_centered**2, 0)*np.sum(yhat_samples_centered**2, 0) )
+	return fit_samples, r2_samples
+
+
 def calculate_critical_temperatures(results_dir, J, Ls, Ns, remove_bias=True):
 	output_dict = {"L{:d}".format(L): {"Ns": Ns, "M": {}, "AE": {}, "GE": {}} for L in Ls}
 	for L in Ls:
@@ -82,10 +100,11 @@ def calculate_critical_temperatures(results_dir, J, Ls, Ns, remove_bias=True):
 		u4samples = U4_samples(results_dir, J, "magnetization", L)
 		tc_samples = critical_temperature_samples(temperatures, u4samples)
 		tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples, remove_bias=remove_bias)
+		output_dict["L{:d}".format(L)]["M"]["samples"] = tc_samples.tolist()
 		output_dict["L{:d}".format(L)]["M"]["mean"] = float(tc_mean)
 		output_dict["L{:d}".format(L)]["M"]["std"] = float(tc_std)
 		for model in ["AE", "GE"]:
-			for stats in ["means", "stds"]:
+			for stats in ["samples", "means", "stds"]:
 				output_dict["L{:d}".format(L)][model][stats] = []
 		for N in Ns:
 			for (model, observable_name) in [("AE", "latent"), ("GE", "latent_equivariant")]:
@@ -93,8 +112,36 @@ def calculate_critical_temperatures(results_dir, J, Ls, Ns, remove_bias=True):
 				u4samples = U4_samples(results_dir, J, observable_name, L, N)
 				tc_samples = critical_temperature_samples(temperatures, u4samples)
 				tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples, remove_bias=remove_bias)
+				output_dict["L{:d}".format(L)][model]["samples"].append( tc_samples.tolist() )
 				output_dict["L{:d}".format(L)][model]["means"].append( float(tc_mean) )
 				output_dict["L{:d}".format(L)][model]["stds"].append( float(tc_std) )
+	def np2py(*args):
+		if type(args[0]) == np.ndarray:
+			return tuple([arg.tolist() for arg in args])
+		return tuple([float(arg) for arg in args])
+	x = 1/np.array(Ls)
+	y_samples = np.array([output_dict["L{:d}".format(L)]["M"]["samples"] for L in Ls])
+	weights = 1/np.array([output_dict["L{:d}".format(L)]["M"]["std"] for L in Ls])
+	fit_samples, r2_samples = lstsq_samples(x, y_samples, weights=weights)
+	samples = {"fit": fit_samples.T, "r2": r2_samples}
+	for (key, value) in samples.items():
+		mean, std = np2py( *jackknife.calculate_mean_std(value) )
+		output_dict[key] = {"M": {"mean": mean, "std": std}}
+		for model in ["AE", "GE"]:
+			output_dict[key][model] = {"means": [], "stds": []}
+	for (i, N) in enumerate(Ns):
+		for model in ["AE", "GE"]:
+			y_samples = np.array([output_dict["L{:d}".format(L)][model]["samples"][i] for L in Ls])
+			weights = 1/np.array([output_dict["L{:d}".format(L)][model]["stds"][i] for L in Ls])
+			fit_samples, r2_samples = lstsq_samples(x, y_samples, weights=weights)
+			samples = {"fit": fit_samples.T, "r2": r2_samples}
+			for (key, value) in samples.items():
+				mean, std = np2py( *jackknife.calculate_mean_std(value) )
+				output_dict[key][model]["means"].append(mean)
+				output_dict[key][model]["stds"].append(std)
+	for L in Ls:
+		for model in ["M", "AE", "GE"]:
+			del output_dict["L{:d}".format(L)][model]["samples"]
 	output_dir = os.path.join(results_dir, "processed", J)
 	os.makedirs(output_dir, exist_ok=True)
 	suffix = "_biased" if not remove_bias else ""
@@ -160,7 +207,7 @@ def calculate_generators(results_dir, Js, Ls, Ns):
 if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
-	Ns = [16, 32, 64, 128, 256, 512, 1024, 2048]
+	Ns = [0, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
 
 #	print("Gathering magnetizations . . . ")
 #	for J in Js:
