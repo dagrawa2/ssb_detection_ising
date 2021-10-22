@@ -160,7 +160,7 @@ def calculate_generators(results_dir, Js, Ls, Ns):
 if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
-	Ns = [16, 32, 64, 128, 256, 512, 1024, 2048]
+	Ns = [0] + [2**n for n in range(1, 12)]
 
 #	print("Gathering magnetizations . . . ")
 #	for J in Js:

@@ -54,6 +54,11 @@ time_start = time.time()
 results_dir = os.path.join(args.results_dir, args.observable_name, "L{:d}".format(args.L), "N{:d}".format(args.n_train_val))
 os.makedirs(results_dir, exist_ok=args.exist_ok)
 
+# make no training data equivalent to no training
+if args.n_train_val == 0:
+	args.n_train_val = 2
+	args.epochs = 0
+
 # load data
 X = []
 T = []
