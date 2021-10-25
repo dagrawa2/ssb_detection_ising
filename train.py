@@ -18,6 +18,7 @@ parser=argparse.ArgumentParser()
 # datasets
 parser.add_argument('--data_dir', '-d', required=True, type=str, help='Master directory of the data.')
 parser.add_argument('--L','-l', required=True, type=int, help='Linear size of lattice.')
+parser.add_argument('--Ls','-ls', type=lambda s: [int(i) for i in s.split(",") if i != ""], default="", help='Multiple lattice sizes (comma separated).')
 # network architecture
 parser.add_argument('--encoder_hidden', '-eh', default=4, type=int, help='Hidden neurons in the encoder.')
 parser.add_argument('--decoder_hidden', '-dh', default=64, type=int, help='Hidden neurons in the decoder.')
@@ -54,6 +55,13 @@ time_start = time.time()
 results_dir = os.path.join(args.results_dir, args.observable_name, "L{:d}".format(args.L), "N{:d}".format(args.n_train_val))
 os.makedirs(results_dir, exist_ok=args.exist_ok)
 
+# if multiple lattice sizes
+n_Ls = len(args.Ls)
+if n_Ls > 0:
+	assert args.symmetric, "--Ls may be set only if --symmetric is also set."
+	assert args.n_train_val%n_Ls == 0, "--n_train_val must be a multiple of len(--Ls)."
+	assert args.n_train_val//n_Ls >= 2, "--n_train_val must be at least twice len(--Ls)."
+
 # make no training data equivalent to no training
 if args.n_train_val == 0:
 	args.n_train_val = 2
@@ -64,12 +72,22 @@ X = []
 T = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L)))):
 	I = pf.datasets.Ising()
-	X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_train_val, dtype=np.float32, flatten=not args.symmetric, symmetric=args.symmetric) )
+	if n_Ls > 0:
+		for L in args.Ls:
+			X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(L), temperature_dir), decode=True, n_samples=args.n_train_val//n_Ls, dtype=np.float32, flatten=not args.symmetric, symmetric=args.symmetric) )
+	else:
+		X.append( I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L), temperature_dir), decode=True, n_samples=args.n_train_val, dtype=np.float32, flatten=not args.symmetric, symmetric=args.symmetric) )
 	T.append( np.full((args.n_train_val, 1), I.T, dtype=np.float32) )
 X = np.concatenate(X, 0)
 T = np.concatenate(T, 0)
-X_train, X_val, T_train, T_val = train_test_split(X, T, stratify=T, test_size=args.val_size)
-del X; del T; gc.collect()
+if n_Ls > 0:
+	stratifier = np.concatenate((T, \
+		np.tile(np.repeat(np.array(args.Ls), args.n_train_val//n_Ls), len(T)//args.n_train_val)[:,None] \
+	), 1)
+else:
+	stratifier = np.copy(T)
+X_train, X_val, T_train, T_val = train_test_split(X, T, stratify=stratifier, test_size=args.val_size)
+del X; del T; del stratifier; gc.collect()
 train_loader = DataLoader(TensorDataset(torch.as_tensor(X_train), torch.as_tensor(T_train)), batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=8)
 val_loader = DataLoader(TensorDataset(torch.as_tensor(X_val), torch.as_tensor(T_val)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
 

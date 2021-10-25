@@ -75,26 +75,29 @@ def critical_temperature_samples(temperatures, u4samples):
 	return tc_samples
 
 
-def calculate_critical_temperatures(results_dir, J, Ls, Ns, remove_bias=True):
-	output_dict = {"L{:d}".format(L): {"Ns": Ns, "M": {}, "AE": {}, "GE": {}} for L in Ls}
+def calculate_critical_temperatures(results_dir, J, Ls, Ns, encoder_names, remove_bias=True):
+	output_dict = {"L{:d}".format(L): {"Ns": Ns, "magnetization": {}} for L in Ls}
+	for L in Ls:
+		for name in encoder_names:
+			output_dict["L{:d}".format(L)][name] = {}
 	for L in Ls:
 		temperatures = np.load(os.path.join(results_dir, J, "magnetization", "L{:d}".format(L), "measurements.npz"))["temperatures"]
 		u4samples = U4_samples(results_dir, J, "magnetization", L)
 		tc_samples = critical_temperature_samples(temperatures, u4samples)
 		tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples, remove_bias=remove_bias)
-		output_dict["L{:d}".format(L)]["M"]["mean"] = float(tc_mean)
-		output_dict["L{:d}".format(L)]["M"]["std"] = float(tc_std)
-		for model in ["AE", "GE"]:
+		output_dict["L{:d}".format(L)]["magnetization"]["mean"] = float(tc_mean)
+		output_dict["L{:d}".format(L)]["magnetization"]["std"] = float(tc_std)
+		for name in encoder_names:
 			for stats in ["means", "stds"]:
-				output_dict["L{:d}".format(L)][model][stats] = []
+				output_dict["L{:d}".format(L)][name][stats] = []
 		for N in Ns:
-			for (model, observable_name) in [("AE", "latent"), ("GE", "latent_equivariant")]:
-				temperatures = np.load(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "N{:d}".format(N), "measurements.npz"))["temperatures"]
-				u4samples = U4_samples(results_dir, J, observable_name, L, N)
+			for name in encoder_names:
+				temperatures = np.load(os.path.join(results_dir, J, name, "L{:d}".format(L), "N{:d}".format(N), "measurements.npz"))["temperatures"]
+				u4samples = U4_samples(results_dir, J, name, L, N)
 				tc_samples = critical_temperature_samples(temperatures, u4samples)
 				tc_mean, tc_std = jackknife.calculate_mean_std(tc_samples, remove_bias=remove_bias)
-				output_dict["L{:d}".format(L)][model]["means"].append( float(tc_mean) )
-				output_dict["L{:d}".format(L)][model]["stds"].append( float(tc_std) )
+				output_dict["L{:d}".format(L)][name]["means"].append( float(tc_mean) )
+				output_dict["L{:d}".format(L)][name]["stds"].append( float(tc_std) )
 	output_dir = os.path.join(results_dir, "processed", J)
 	os.makedirs(output_dir, exist_ok=True)
 	suffix = "_biased" if not remove_bias else ""
@@ -104,11 +107,11 @@ def calculate_critical_temperatures(results_dir, J, Ls, Ns, remove_bias=True):
 
 ### process execution times
 
-def calculate_times(results_dir, Js, Ls, Ns):
+def calculate_times(results_dir, Js, Ls, Ns, encoder_names):
 	output_dict = {"Ls": Ls, "preprocessing_means": [], "preprocessing_stds": []}
-	for model in ["AE", "GE"]:
+	for name in encoder_names:
 		for stat in ["mean", "std"]:
-			output_dict["{}_{}s".format(model, stat)] = []
+			output_dict["{}_{}s".format(name, stat)] = []
 	for L in Ls:
 		times = []
 		for J in Js:
@@ -121,15 +124,15 @@ def calculate_times(results_dir, Js, Ls, Ns):
 		output_dict["preprocessing_means"].append( times.mean() )
 		output_dict["preprocessing_stds"].append( times.std() )
 	for L in Ls:
-		for (model, observable_name) in [("AE", "latent"), ("GE", "latent_equivariant")]:
+		for name in encoder_names:
 			times = []
 			for J in Js:
 				for N in Ns:
-					with open(os.path.join(results_dir, J, observable_name, "L{:d}".format(L), "N{:d}".format(N), "results.json"), "r") as f:
+					with open(os.path.join(results_dir, J, name, "L{:d}".format(L), "N{:d}".format(N), "results.json"), "r") as f:
 						times.append( json.load(f)["time"] )
 			times = np.array(times)
-			output_dict["{}_means".format(model)].append( times.mean() )
-			output_dict["{}_stds".format(model)].append( times.std() )
+			output_dict["{}_means".format(name)].append( times.mean() )
+			output_dict["{}_stds".format(name)].append( times.std() )
 	output_dict = {key: np.asarray(value) for (key, value) in output_dict.items()}
 	output_dir = os.path.join(results_dir, "processed")
 	os.makedirs(output_dir, exist_ok=True)
@@ -138,19 +141,21 @@ def calculate_times(results_dir, Js, Ls, Ns):
 
 ### process symmetry generators
 
-def calculate_generators(results_dir, Js, Ls, Ns):
+def calculate_generators(results_dir, Js, Ls, Ns, encoder_names):
 	generator_types = ["spatial", "internal"]
 	output_dict = {J: {generator_type: {} for generator_type in generator_types} for J in Js}
 	for J in Js:
 		for generator_type in generator_types:
-			gens = []
-			for L in Ls:
-				for N in Ns:
-					with open(os.path.join(results_dir, J, "latent_equivariant", "L{:d}".format(L), "N{:d}".format(N), "generator_reps.json"), "r") as fp:
-						gens.append( json.load(fp)[generator_type] )
-			gens = np.array(gens)
-			output_dict[J][generator_type]["mean"] = float( gens.mean() )
-			output_dict[J][generator_type]["std"] = float( gens.std() )
+			for name in encoder_names:
+				output_dict[J][generator_type][name] = {}
+				gens = []
+				for L in Ls:
+					for N in Ns:
+						with open(os.path.join(results_dir, J, name, "L{:d}".format(L), "N{:d}".format(N), "generator_reps.json"), "r") as fp:
+							gens.append( json.load(fp)[generator_type] )
+				gens = np.array(gens)
+				output_dict[J][generator_type][name]["mean"] = float( gens.mean() )
+				output_dict[J][generator_type][name]["std"] = float( gens.std() )
 	output_dir = os.path.join(results_dir, "processed")
 	os.makedirs(output_dir, exist_ok=True)
 	with open(os.path.join(output_dir, "generators.json"), "w") as fp:
@@ -160,7 +165,8 @@ def calculate_generators(results_dir, Js, Ls, Ns):
 if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
-	Ns = [0] + [2**n for n in range(1, 12)]
+	Ns = [16, 32, 64, 128, 256, 512, 1024, 2048]
+	encoder_names = ["latent", "latent_equivariant", "latent_multiscale"]
 
 #	print("Gathering magnetizations . . . ")
 #	for J in Js:
@@ -170,18 +176,19 @@ if __name__ == "__main__":
 	print("Calculating stats . . . ")
 	for J in Js:
 		calculate_stats("results", J, "magnetization", 128)
-		calculate_stats("results", J, "latent", 128, N=2048)
-		calculate_stats("results", J, "latent_equivariant", 128, N=2048)
+		for name in encoder_names:
+			calculate_stats("results", J, name, 128, N=2048)
 
 	print("Calculating critical temperatures . . . ")
 	for J in Js:
 		for remove_bias in [True, False]:
-			calculate_critical_temperatures("results", J, Ls, Ns, remove_bias=remove_bias)
+			calculate_critical_temperatures("results", J, Ls, Ns, encoder_names, remove_bias=remove_bias)
 
 	print("Calculating execution times . . . ")
-	calculate_times("results", Js, Ls, Ns)
+	calculate_times("results", Js, Ls, Ns, encoder_names)
 
 	print("Calculating symmetry generators . . . ")
-	calculate_generators("results", Js, Ls, Ns)
+	GE_encoder_names = ["latent_equivariant", "latent_multiscale"]
+	calculate_generators("results", Js, Ls, Ns, GE_encoder_names)
 
 	print("Done!")
