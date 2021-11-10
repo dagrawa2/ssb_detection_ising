@@ -82,6 +82,7 @@ if args.n_train_val == 0:
 X = []
 T = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L)))):
+	if temperature_dir[0] != "T": continue
 	I = pf.datasets.Ising()
 	if n_Ls > 0:
 		for L in args.Ls:
@@ -135,6 +136,7 @@ del train_loader; del val_loader; gc.collect()
 temperatures = []
 measurements = []
 for temperature_dir in sorted(os.listdir(os.path.join(args.data_dir, "L{:d}".format(args.L_test)))):
+	if temperature_dir[0] != "T": continue
 	I = pf.datasets.Ising()
 	X = I.load_states(os.path.join(args.data_dir, "L{:d}".format(args.L_test), temperature_dir), decode=True, n_samples=args.n_test, dtype=np.float32, flatten=not args.symmetric, symmetric=args.symmetric)
 	T = np.full((args.n_test, 1), I.T, dtype=np.float32)

@@ -15,6 +15,7 @@ def gather_magnetizations(data_dir, results_dir, J, L):
 	measurements = []
 	L_dir = os.path.join(data_dir, J, "L{:d}".format(L))
 	for temperature_dir in sorted(os.listdir(L_dir)):
+		if temperature_dir[0] != "T": continue
 		I = Ising()
 		Ms = I.magnetization(os.path.join(L_dir, temperature_dir), per_spin=True, staggered=(J=="antiferromagnetic"))
 		temperatures.append(I.T)
@@ -227,6 +228,7 @@ def calculate_times(results_dir, Js, Ls, Ns, encoder_names):
 		for J in Js:
 			times_J = []
 			for dir in sorted(os.listdir(os.path.join("data", J, "L{:d}".format(L)))):
+				if dir[0] != "T": continue
 				with open(os.path.join("data", J, "L{:d}".format(L), dir, "time_symmetric.txt"), "r") as f:
 					times_J.append( float(f.read()) )
 			times.append(times_J)
@@ -257,6 +259,7 @@ def calculate_error_vs_time(results_dir, J, Ls, N, observable_names, preprocess_
 		preprocess_times_temp = []
 		data_dir = os.path.join("data", J, "L{:d}".format(L))
 		for dir in sorted(os.listdir(data_dir)):
+			if dir[0] != "T": continue
 			with open(os.path.join(data_dir, dir, "time.txt"), "r") as fp:
 				data_times_temp.append( float(fp.read()) )
 			with open(os.path.join(data_dir, dir, "time_symmetric.txt"), "r") as fp:
@@ -342,7 +345,7 @@ if __name__ == "__main__":
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
 	Ns = [2, 4, 8, 16, 32, 64, 128, 256]
-	encoder_names = ["latent", "latent_equivariant", "latent_multiscale_2", "latent_multiscale_4"]
+	encoder_names = ["latent", "latent_equivariant", "latent_multiscale_4"]
 
 #	print("Gathering magnetizations . . . ")
 #	for J in Js:
