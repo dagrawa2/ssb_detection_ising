@@ -45,11 +45,6 @@ def gather_magnetizations(data_dir, results_dir, J, L):
 
 
 def calculate_stats(results_dir, J, observable_name, L, N_test, N=None, fold=None, seed=None, L_test=None, bins=50):
-	dir = os.path.join(J, observable_name, "L{:d}".format(L))
-	for (prefix, value) in [("N", N), ("L", L_test)]:
-		if value is not None:
-			dir = os.path.join(dir, "{}{:d}".format(prefix, value))
-
 	dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test)
 	measurements = np.load(os.path.join(dir, "measurements.npz"))
 	temperatures = measurements["temperatures"]
@@ -364,6 +359,19 @@ if __name__ == "__main__":
 		for encoder_name in encoder_names:
 			print(encoder_name)
 			gather_tc_vs_time_extrapolate(results_dir, J, encoder_name, Ns=Ns_dict[encoder_name], folds=folds, seeds=seeds)
+
+	print("Combining multiscale T_c vs time extrapolate data . . . ")
+	row_dict = {"latent_multiscale_2": 0, "latent_multiscale_4": 2}
+	for J in Js:
+		Ds = []
+		for (name, row) in row_dict.items():
+			with np.load(os.path.join(results_dir, "processed", J, name, "tc_vs_time_extrapolate.npz")) as fp:
+				D = dict(fp)
+			Ds.append( {key: value[row] for (key, value) in D.items()} )
+		D = {key: np.stack([D[key] for D in Ds], 0) for key in Ds[0].keys()}
+		output_dir = os.path.join(results_dir, "processed", J, "latent_multiscale")
+		os.makedirs(output_dir, exist_ok=True)
+		np.savez(os.path.join(output_dir, "tc_vs_time_extrapolate.npz"), **D)
 
 	print("Calculating symmetry generators . . . ")
 	calculate_generators(results_dir, Js, ["latent_equivariant"], Ls, Ns, folds, seeds)
