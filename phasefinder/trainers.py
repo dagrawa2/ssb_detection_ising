@@ -6,17 +6,24 @@ from torch.nn import functional as F
 
 class Autoencoder(object):
 
-	def __init__(self, encoder, decoder, epochs=1, lr=1e-3, equivariance_reg=0, equivariance_pre=0, device="cpu"):
+	def __init__(self, encoder, decoder, epochs=1, lr=1e-3, rescale_lr=False, equivariance_reg=0, equivariance_pre=0, device="cpu"):
 		self.encoder = encoder.to(device)
 		self.decoder = decoder.to(device)
 		self.epochs = epochs
 		self.lr = lr
+		self.rescale_lr = rescale_lr
 		self.equivariance_reg = equivariance_reg
 		self.equivariance_pre = equivariance_pre
 		self.device = device
 
-		parameters = list(self.encoder.parameters()) + list(decoder.parameters())
-		self.optimizer = optim.Adam(parameters, lr=self.lr)
+		if self.rescale_lr:
+			param_group1 = [encoder.linear1.weight]
+			param_group2 = [decoder.linear2.weight, decoder.linear2.bias]
+			param_group3 = [encoder.linear1.bias, encoder.linear2.weight, encoder.linear2.bias, decoder.linear1.weight, decoder.linear1.bias]
+			self.optimizer = optim.Adam([{"params": param_group1, "lr": 2*self.lr/encoder.linear1.weight.shape[1]}, {"params": param_group2, "lr": self.lr/2}, {"params": param_group3, "lr": self.lr}])
+		else:
+			parameters = list(self.encoder.parameters()) + list(decoder.parameters())
+			self.optimizer = optim.Adam(parameters, lr=self.lr)
 
 	def fit(self, train_loader, callbacks):
 		# callbacks before training

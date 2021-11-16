@@ -51,7 +51,7 @@ args=parser.parse_args()
 # fix the random seed
 random.seed(0)
 np.random.seed(0)
-torch.manual_seed(args.seed)
+torch.manual_seed(0)
 
 # record initial time
 time_start = time.time()
@@ -117,8 +117,31 @@ latent_dim = 1
 encoder = pf.models.MLP(input_dim, args.encoder_hidden, latent_dim)
 decoder = pf.models.MLP(latent_dim+1, args.decoder_hidden, input_dim)
 
+# initialize parameters
+torch.manual_seed(args.seed)
+torch.nn.init.uniform_(encoder.linear1.bias, -1/np.sqrt(2), 1/np.sqrt(2))
+torch.nn.init.uniform_(encoder.linear2.weight, -1/np.sqrt(args.encoder_hidden), 1/np.sqrt(args.encoder_hidden))
+torch.nn.init.uniform_(encoder.linear2.bias, -1/np.sqrt(args.encoder_hidden), 1/np.sqrt(args.encoder_hidden))
+torch.nn.init.uniform_(decoder.linear1.weight, -1/np.sqrt(latent_dim+1), 1/np.sqrt(latent_dim+1))
+torch.nn.init.uniform_(decoder.linear1.bias, -1/np.sqrt(latent_dim+1), 1/np.sqrt(latent_dim+1))
+encoder_weight = 2/np.sqrt(2)*torch.rand(args.encoder_hidden, 2) - 1/np.sqrt(2)
+decoder_weight = 2/np.sqrt(args.decoder_hidden)*torch.rand(2, args.decoder_hidden) - 1/np.sqrt(args.decoder_hidden)
+decoder_bias = 2/np.sqrt(args.decoder_hidden)*torch.rand(2) - 1/np.sqrt(args.decoder_hidden)
+if not args.symmetric:
+	def checkerboardify(x, L):
+		y = torch.tile(x, [1, L//2])
+		return torch.tile(torch.cat([y, torch.flip(y, [1])], 1), [1, L//2])
+	encoder_weight = 2/args.L**2*checkerboardify(encoder_weight, args.L)
+	decoder_weight = torch.t( checkerboardify(torch.t(decoder_weight), args.L) )
+	decoder_bias = checkerboardify(decoder_bias.unsqueeze(0), args.L).squeeze(0)
+encoder.linear1.weight.data.copy_(encoder_weight)
+decoder.linear2.weight.data.copy_(decoder_weight)
+decoder.linear2.bias.data.copy_(decoder_bias)
+del encoder_weight; del decoder_weight; del decoder_bias; gc.collect()
+torch.manual_seed(0)
+
 # create trainer and callbacks
-trainer = pf.trainers.Autoencoder(encoder, decoder, epochs=args.epochs, lr=args.lr, equivariance_reg=args.equivariance_reg, equivariance_pre=args.equivariance_pre, device=args.device)
+trainer = pf.trainers.Autoencoder(encoder, decoder, epochs=args.epochs, lr=args.lr, rescale_lr=not args.symmetric, equivariance_reg=args.equivariance_reg, equivariance_pre=args.equivariance_pre, device=args.device)
 callbacks = [pf.callbacks.Training()]
 if args.val_interval > 0:
 	callbacks.append( pf.callbacks.Validation(trainer, val_loader, epoch_interval=args.val_interval) )
