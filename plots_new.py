@@ -70,7 +70,43 @@ def plot_stats(results_dir, J, observable_name, L, N=None, fold=None, seed=None,
 	plt.close()
 
 
+### plot error vs lattice size data
+
+def plot_error_vs_lattice(results_dir, J, Ls, observable_names, observable_labels, observable_colors, N=None, fold=None, seed=None):
+	tc_exact = 2/np.log(1+np.sqrt(2))
+	tc2err = lambda tc: 100*(tc/tc_exact-1)
+	x = 1/np.array(Ls)
+	x_pnts = np.linspace(0, x.max(), 100, endpoint=True)
+	plt.figure()
+	for (name, label, color) in zip(observable_names, observable_labels, observable_colors):
+		y = []
+		for L in Ls:
+			with np.load(os.path.join(build_path(results_dir, J, name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as fp:
+				y.append( fp["means"][-1]+fp["biases"][-1] )
+		with np.load(os.path.join(build_path(results_dir, J, name, None, N=N, fold=fold, seed=seed, subdir="processed"), "tc_extrapolate.npz")) as fp:
+			slope, intercept = fp["slope_means"][-1,-1], fp["yintercept_means"][-1,-1]
+		yhat = slope*x_pnts + intercept
+		y, yhat = tc2err(y), tc2err(yhat)
+		plt.scatter(x, y, alpha=0.7, color=color, label=label)
+		plt.plot(x_pnts, yhat, alpha=0.7, color=color)
+	plt.legend(loc="upper left", bbox_to_anchor=(0, 1), fancybox=True, fontsize=10)
+	plt.xlabel(r"Inverse lattice size ($L^{-1}$)", fontsize=12)
+	plt.ylabel("Error (%)", fontsize=12)
+	plt.tight_layout()
+	output_dir = os.path.join(results_dir, "plots", J)
+	os.makedirs(output_dir, exist_ok=True)
+	plt.savefig(os.path.join(output_dir, "tc_vs_lattice.png"))
+	plt.close()
+
+
 ### plot error vs time data
+
+def cm_handles(colors, markers, c_marker, m_color):
+	f = lambda c, m: plt.plot([], [], color=c, marker=m, ls="none")[0]
+	handles = [f(c, c_marker) for c in colors] \
+		+ [f(m_color, m) for m in markers]
+	return handles
+
 
 def fit_error_vs_time(results_dir, J, observable_name, extrapolate=False, biased=False, jitter=0):
 	tc = 2/np.log(1+np.sqrt(2))
@@ -93,14 +129,25 @@ def fit_error_vs_time(results_dir, J, observable_name, extrapolate=False, biased
 
 def plot_error_vs_time(results_dir, J, observable_names, observable_labels, observable_colors, extrapolate=False, biased=False):
 	jitter = 1e-4 if extrapolate else 0
+	if extrapolate:
+		labels = observable_labels + ["2", "3", "4"]
+		markers = ["s", "D", "o"]
+	else:
+		labels = observable_labels + ["16", "32", "64", "128"]
+		markers = ["^", "s", "D", "o"]
+	handles = cm_handles(observable_colors, markers, "o", "k")
 	plt.figure()
-	for (name, label, color) in zip(observable_names, observable_labels, observable_colors):
+	for (name, color) in zip(observable_names, observable_colors):
 		x, y, w = fit_error_vs_time(results_dir, J, name, extrapolate=extrapolate, biased=biased, jitter=jitter)
 		x_pnts = np.linspace(x.min(), x.max(), 1000, endpoint=True)
 		yhat = w[0]*x_pnts**w[1]
-		plt.scatter(x, y, color=color, label=label)
+		markers_temp = [markers[0], markers[2]] if name == "latent_multiscale" else markers
+		nm = len(markers_temp)
+		x, y = x.reshape((nm, len(x)//nm)), y.reshape((nm, len(y)//nm))
+		for i in range(nm):
+			plt.scatter(x[i], y[i], marker=markers[i], color=color, alpha=0.7)
 		plt.plot(x_pnts, yhat, color=color)
-	plt.legend(loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10)
+	plt.legend(handles, labels, loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10, ncol=2)
 	plt.xscale("log")
 	plt.yscale("log")
 	plt.xlabel("Time (min)", fontsize=12)
@@ -141,8 +188,9 @@ def tabulate_generators(results_dir, Js, encoder_name):
 
 
 if __name__ == "__main__":
-	results_dir = "results5"
+	results_dir = "results6"
 	Js = ["ferromagnetic", "antiferromagnetic"]
+	Ls = [16, 32, 64, 128]
 
 	tc_color = "red"
 	fit_color = "blue"
@@ -156,8 +204,9 @@ if __name__ == "__main__":
 		for name in ["magnetization", "latent", "latent_equivariant"]:
 			plot_stats(results_dir, J, name, 128, N=256, fold=0, seed=0, fit_color=fit_color, tc_color=tc_color)
 
-	print("Plotting error vs time . . . ")
+	print("Plotting error . . . ")
 	for J in Js:
+		plot_error_vs_lattice(results_dir, J, Ls, observable_names[:-1], observable_labels[:-1], observable_colors[:-1], N=256, fold=0, seed=0)
 		plot_error_vs_time(results_dir, J, observable_names[:-1], observable_labels[:-1], observable_colors[:-1], extrapolate=False, biased=True)
 		plot_error_vs_time(results_dir, J, observable_names, observable_labels, observable_colors, extrapolate=True, biased=True)
 
