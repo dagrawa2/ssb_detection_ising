@@ -24,7 +24,7 @@ do
 			for seed in ${seeds[@]}
 			do
 				# baseline-autoencoder
-				python train_new.py \
+				python train.py \
 					--data_dir=data/$J \
 					--L=$L \
 					--fold=$fold \
@@ -41,7 +41,7 @@ do
 					--device=cpu
 				#
 				# GE-autoencoder
-				python train_new.py \
+				python train.py \
 					--data_dir=data/$J \
 					--L=$L \
 					--fold=$fold \
@@ -74,7 +74,7 @@ do
 		do
 			for j in ${!scales[@]}
 			do
-				python train_new.py \
+				python train.py \
 					--data_dir=data/$J \
 					--Ls=${scales[j]} \
 					--L=16 \
@@ -109,7 +109,7 @@ do
 		do
 			for i in ${!Ns[@]}
 			do
-				python train_new.py \
+				python train.py \
 					--data_dir=data/$J \
 					--L=$L \
 					--fold=$fold \
@@ -143,7 +143,7 @@ do
 		do
 			for i in ${!Ns[@]}
 			do
-				python train_new.py \
+				python train.py \
 					--data_dir=data/$J \
 					--L=$L \
 					--fold=$fold \
