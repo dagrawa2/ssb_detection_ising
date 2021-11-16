@@ -1,6 +1,7 @@
 import os
 import json
 import numpy as np
+from scipy.linalg import lstsq
 
 import matplotlib
 matplotlib.use("agg")
@@ -8,16 +9,34 @@ import matplotlib.pyplot as plt
 matplotlib.rc("xtick", labelsize=14)
 matplotlib.rc("ytick", labelsize=14)
 
-def plot_stats(results_dir, J, observable_name, L, N=None, tc_color="black"):
-	if N is not None:
-		stats = dict(np.load(os.path.join(results_dir, "processed", J, observable_name, "L{:d}".format(L), "N{:d}".format(N), "stats.npz")))
-		output_dir = os.path.join(results_dir, "plots", J, observable_name, "L{:d}".format(L), "N{:d}".format(N))
-	else:
-		stats = dict(np.load(os.path.join(results_dir, "processed", J, observable_name, "L{:d}".format(L), "stats.npz")))
-		output_dir = os.path.join(results_dir, "plots", J, observable_name, "L{:d}".format(L))
+
+def build_path(results_dir, J, observable_name, L, N=None, fold=None, seed=None, L_test=None, subdir=None):
+	if subdir is not None:
+		results_dir = os.path.join(results_dir, subdir)
+	path = os.path.join(results_dir, J, observable_name)
+	if L is not None:
+		path = os.path.join(path, "L{:d}".format(L))
+	if observable_name == "magnetization":
+		return path
+	path = os.path.join(path, "N{:d}".format(N), "fold{:d}".format(fold), "seed{:d}".format(seed))
+	if L_test is None or L_test == L:
+		return path
+	path = os.path.join(path, "L{:d}".format(L_test))
+	return path
+
+
+### plot magnetization, order parameter curves, and U_4 Binder cumulant curves
+
+def plot_stats(results_dir, J, observable_name, L, N=None, fold=None, seed=None, fit_color="black", tc_color="black"):
+	dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed")
+	with np.load(os.path.join(dir, "stats.npz")) as fp:
+		stats = dict(fp)
+	with np.load(os.path.join(dir, "tc.npz")) as fp:
+		tc_estimate = fp["means"][-1]+fp["biases"][-1]
+	output_dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="plots")
 	os.makedirs(output_dir, exist_ok=True)
-	stats["distribution_range"] = stats["distribution_range"].tolist() if "distribution_range" in stats else [-1, 1]
 	# distributions
+	stats["distribution_range"] = stats["distribution_range"].tolist() if "distribution_range" in stats else [-1, 1]
 	plt.figure()
 	plt.imshow(np.flip(stats["distributions"].T, 0), cmap="gray_r", vmin=0, vmax=1, extent=(stats["temperatures"].min(), stats["temperatures"].max(), *stats["distribution_range"]), aspect="auto")
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color=tc_color, linestyle="dashed")
@@ -36,10 +55,14 @@ def plot_stats(results_dir, J, observable_name, L, N=None, tc_color="black"):
 	plt.savefig(os.path.join(output_dir, "order.png"))
 	plt.close()
 	# U_4 Binder cumulant
+	mask = stats["temperatures"] < tc_estimate
+	not_mask = np.logical_not(mask)
+	step_fit = np.array([stats["u4_means"][mask].mean()]*mask.sum() + [stats["u4_means"][not_mask].mean()]*not_mask.sum())
 	plt.figure()
 	plt.plot(stats["temperatures"], stats["u4_means"], color="black")
 	plt.plot(stats["temperatures"], stats["u4_means"]-stats["u4_stds"], color="black", linestyle="dashed")
 	plt.plot(stats["temperatures"], stats["u4_means"]+stats["u4_stds"], color="black", linestyle="dashed")
+	plt.plot(stats["temperatures"], step_fit, color=fit_color, linestyle="dashed")
 	plt.axvline(x=2/np.log(1+np.sqrt(2)), color=tc_color, linestyle="dashed")
 	plt.xlabel(r"$T$", fontsize=12)
 	plt.tight_layout()
@@ -47,123 +70,147 @@ def plot_stats(results_dir, J, observable_name, L, N=None, tc_color="black"):
 	plt.close()
 
 
-def plot_critical_temperatures(results_dir, J, L, encoder_names, encoder_labels, encoder_colors, magnetization_color="black", tc_color="black", remove_bias=True):
-	output_dir = os.path.join(results_dir, "plots", J, "L{:d}".format(L))
-	os.makedirs(output_dir, exist_ok=True)
-	suffix = "_biased" if not remove_bias else ""
-	with open(os.path.join(results_dir, "processed", J, "tc{}.json".format(suffix)), "r") as fp:
-		data = json.load(fp)["L{:d}".format(L)]
-	x_min = np.round( np.concatenate([np.array(data[name]["means"]) for name in encoder_names], 0).min()-0.1, 1)
-	x_max = np.round( np.concatenate([np.array(data[name]["means"])+np.array(data[name]["stds"]) for name in encoder_names], 0).max()+0.1, 1)
-	y = np.arange(len(data["Ns"]))
-	total_width = 0.7
-	width = total_width/len(encoder_names)
-	shifts = [-total_width/2 + total_width/(2*len(encoder_names))*(2*m+1) for m in range(len(encoder_names))]
-	plt.figure()
-	for (name, label, color, shift) in zip(encoder_names, encoder_labels, encoder_colors, shifts):
-		plt.barh(y+shift, data[name]["means"], width, xerr=data[name]["stds"], color=color, label=label)
-	plt.axvline(x=2/np.log(1+np.sqrt(2)), color=tc_color, linestyle="dashed")
-	plt.axvline(x=data["magnetization"]["mean"], color=magnetization_color, linestyle="dashed")
-	plt.axvline(x=data["magnetization"]["mean"]-data["magnetization"]["std"], color=magnetization_color, linestyle="dotted")
-	plt.axvline(x=data["magnetization"]["mean"]+data["magnetization"]["std"], color=magnetization_color, linestyle="dotted")
-	plt.legend(loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10)
-	plt.xlim(x_min, x_max)
-	plt.xlabel(r"$T$", fontsize=12)
-	plt.ylabel(r"Samples per temperature ($N$)", fontsize=12)
-	plt.yticks(y, data["Ns"])
-	plt.tight_layout()
-	plt.savefig(os.path.join(output_dir, "tc{}.png".format(suffix)))
-	plt.close()
+### plot error vs lattice size data
 
-
-def plot_times(results_dir, encoder_names, encoder_labels, encoder_colors, preprocessing_bottoms, preprocessing_label="", preprocessing_color="black"):
-	output_dir = os.path.join(results_dir, "plots")
-	os.makedirs(output_dir, exist_ok=True)
-	times = np.load(os.path.join(results_dir, "processed", "times.npz"))
-	x = np.arange(len(times["Ls"]))
-	total_width = 0.7
-	width = total_width/len(encoder_names)
-	shifts = [-total_width/2 + total_width/(2*len(encoder_names))*(2*m+1) for m in range(len(encoder_names))]
+def plot_error_vs_lattice(results_dir, J, Ls, observable_names, observable_labels, observable_colors, N=None, fold=None, seed=None):
+	tc_exact = 2/np.log(1+np.sqrt(2))
+	tc2err = lambda tc: 100*(tc/tc_exact-1)
+	x = 1/np.array(Ls)
+	x_pnts = np.linspace(0, x.max(), 100, endpoint=True)
 	plt.figure()
-	for (name, label, color, shift) in zip(encoder_names, encoder_labels, encoder_colors, shifts):
-		plt.bar(x+shift, times[name+"_means"], width, yerr=times[name+"_stds"], color=color, label=color)
-		if name in preprocessing_bottoms:
-			plt.bar(x+shift, times["preprocessing_means"], width, yerr=times["preprocessing_stds"], bottom=times[name+"_means"], color=preprocessing_color, label=preprocessing_label)
+	for (name, label, color) in zip(observable_names, observable_labels, observable_colors):
+		y = []
+		for L in Ls:
+			with np.load(os.path.join(build_path(results_dir, J, name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as fp:
+				y.append( fp["means"][-1]+fp["biases"][-1] )
+		with np.load(os.path.join(build_path(results_dir, J, name, None, N=N, fold=fold, seed=seed, subdir="processed"), "tc_extrapolate.npz")) as fp:
+			slope, intercept = fp["slope_means"][-1,-1], fp["yintercept_means"][-1,-1]
+		yhat = slope*x_pnts + intercept
+		y, yhat = tc2err(y), tc2err(yhat)
+		plt.scatter(x, y, alpha=0.7, color=color, label=label)
+		plt.plot(x_pnts, yhat, alpha=0.7, color=color)
 	plt.legend(loc="upper left", bbox_to_anchor=(0, 1), fancybox=True, fontsize=10)
-	plt.xlabel(r"Lattice size ($L$)", fontsize=12)
-	plt.xticks(x, times["Ls"].astype(np.int32))
-	plt.ylabel("Time (min)", fontsize=12)
+	plt.xlabel(r"Inverse lattice size ($L^{-1}$)", fontsize=12)
+	plt.ylabel("Error (%)", fontsize=12)
 	plt.tight_layout()
-	plt.savefig(os.path.join(output_dir, "times.png"))
+	output_dir = os.path.join(results_dir, "plots", J)
+	os.makedirs(output_dir, exist_ok=True)
+	plt.savefig(os.path.join(output_dir, "tc_vs_lattice.png"))
 	plt.close()
 
 
-def tabulate_generators(results_dir, Js, encoder_names, encoder_headings):
+### plot error vs time data
+
+def cm_handles(colors, markers, c_marker, m_color):
+	f = lambda c, m: plt.plot([], [], color=c, marker=m, ls="none")[0]
+	handles = [f(c, c_marker) for c in colors] \
+		+ [f(m_color, m) for m in markers]
+	return handles
+
+
+def fit_error_vs_time(results_dir, J, observable_name, extrapolate=False, biased=False, jitter=0):
+	tc = 2/np.log(1+np.sqrt(2))
+	suffix = "_extrapolate" if extrapolate else ""
+	with np.load(os.path.join(results_dir, "processed", J, observable_name, "tc_vs_time{}.npz".format(suffix))) as data:
+		D = dict(data)
+	if extrapolate:
+		D = {key: value.reshape((-1)) for (key, value) in D.items()}
+	if biased:
+		D["tc_means"] = D["tc_means"] + D["tc_biases"]
+	x = np.log(D["times"]/60 + jitter)
+	X = np.stack([np.ones_like(x), x], 1)
+	y = np.log(100*np.abs(D["tc_means"]/tc-1) + jitter)
+	w = lstsq(X, y)[0]
+	x = D["times"]/60
+	y = 100*np.abs(D["tc_means"]/tc-1)
+	w[0] = np.exp(w[0])
+	return x, y, w
+
+
+def plot_error_vs_time(results_dir, J, observable_names, observable_labels, observable_colors, extrapolate=False, biased=False):
+	jitter = 1e-4 if extrapolate else 0
+	if extrapolate:
+		labels = observable_labels + ["2", "3", "4"]
+		markers = ["s", "D", "o"]
+	else:
+		labels = observable_labels + ["16", "32", "64", "128"]
+		markers = ["^", "s", "D", "o"]
+	handles = cm_handles(observable_colors, markers, "o", "k")
+	plt.figure()
+	for (name, color) in zip(observable_names, observable_colors):
+		x, y, w = fit_error_vs_time(results_dir, J, name, extrapolate=extrapolate, biased=biased, jitter=jitter)
+		x_pnts = np.linspace(x.min(), x.max(), 1000, endpoint=True)
+		yhat = w[0]*x_pnts**w[1]
+		markers_temp = [markers[0], markers[2]] if name == "latent_multiscale" else markers
+		nm = len(markers_temp)
+		x, y = x.reshape((nm, len(x)//nm)), y.reshape((nm, len(y)//nm))
+		for i in range(nm):
+			plt.scatter(x[i], y[i], marker=markers[i], color=color, alpha=0.7)
+		plt.plot(x_pnts, yhat, color=color)
+	plt.legend(handles, labels, loc="upper right", bbox_to_anchor=(1, 1), fancybox=True, fontsize=10, ncol=2)
+	plt.xscale("log")
+	plt.yscale("log")
+	plt.xlabel("Time (min)", fontsize=12)
+	plt.ylabel("Abs error (%)", fontsize=12)
+	suffix = "_extrapolate" if extrapolate else ""
+	output_dir = os.path.join(results_dir, "plots", J)
+	os.makedirs(output_dir, exist_ok=True)
+	plt.savefig(os.path.join(output_dir, "tc_vs_time{}.png".format(suffix)))
+	plt.close()
+
+
+### tabulate symmetry generators
+
+def tabulate_generators(results_dir, Js, encoder_name):
 	output_dir = os.path.join(results_dir, "plots")
 	os.makedirs(output_dir, exist_ok=True)
 	with open(os.path.join(results_dir, "processed", "generators.json"), "r") as fp:
 		gens = json.load(fp)
+	for J in Js:
+		gens[J] = gens[J][encoder_name]
 	generator_types = ["spatial", "internal"]
-	stds = [gens[J][generator_type][name]["std"] for J in Js for generator_type in generator_types for name in encoder_names]
+	stds = [gens[J][gen_type]["std"] for J in Js for gen_type in generator_types]
 	max_precision = 1 + max([1-int(np.log10(s)) for s in stds	])
-	S_columns = "S[table-format=-1.{:d}(2),table-align-uncertainty=true]".format(max_precision)*(2*len(encoder_names))
+	S_columns = 2*"S[table-format=-1.{:d}(2),table-align-uncertainty=true]".format(max_precision)
 	with open(os.path.join(output_dir, "generators.tex"), "w") as fp:
 		fp.write("\\begin{{tabular}}{{c{}}}\n".format(S_columns))
 		fp.write("\\toprule\n")
-		fp.write("\\quad")
-		for heading in generator_types:
-			fp.write(" & \\multicolumn{{{:d}}}{{c}}{{{}}}".format(len(encoder_names), heading.capitalize()))
-		fp.write(" \\\\\n")
-		fp.write("\\midrule\n")
-		fp.write("\\quad")
-		for _ in range(2):
-			for heading in encoder_headings:
-				fp.write(" & {}".format(heading))
-		fp.write(" \\\\\n")
+		fp.write("\\quad & Spatial & Internal \\\\\n")
 		fp.write("\\midrule\n")
 		for J in Js:
 			fp.write(J.capitalize())
-			for generator_type in generator_types:
-				for name in encoder_names:
-					precision = 2-int(np.log10(gens[J][generator_type][name]["std"]))
-					fp.write(" & {{:.{:d}f}}\\pm {{:.{:d}f}}".format(precision, precision).format(gens[J][generator_type][name]["mean"], gens[J][generator_type][name]["std"]))
+			for gen_type in generator_types:
+				precision = 2-int(np.log10(gens[J][gen_type]["std"]))
+				fp.write(" & {{:.{:d}f}}\\pm {{:.{:d}f}}".format(precision, precision).format(gens[J][gen_type]["mean"], gens[J][gen_type]["std"]))
 			fp.write(" \\\\\n")
 		fp.write("\\bottomrule\n")
 		fp.write("\\end{tabular}")
 
 
 if __name__ == "__main__":
+	results_dir = "results6"
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
 
 	tc_color = "red"
-	magnetization_color= "orange"
+	fit_color = "blue"
 
-	encoder_names = ["latent", "latent_equivariant", "latent_multiscale"]
-	encoder_labels = ["Baseline-encoder", "GE-encoder", "GE-encoder (multiscale)"]
-	encoder_colors = ["purple", "blue", "green"]
-
-	preprocessing_bottoms = ["latent_equivariant", "latent_multiscale"]
-	preprocessing_label = "Checkerboard-averaging"
-	preprocessing_color = "lightblue"
+	observable_names = ["magnetization", "latent", "latent_equivariant", "latent_multiscale"]
+	observable_labels = ["Magnetization", "Baseline-encoder", "GE-encoder", "GE-encoder (multiscale)"]
+	observable_colors = ["red", "green", "blue", "purple"]
 
 	print("Plotting statistics . . . ")
 	for J in Js:
-		plot_stats("results", J, "magnetization", 128, tc_color=tc_color)
-		for name in encoder_names:
-			plot_stats("results", J, name, 128, N=2048, tc_color=tc_color)
+		for name in ["magnetization", "latent", "latent_equivariant"]:
+			plot_stats(results_dir, J, name, 128, N=256, fold=0, seed=0, fit_color=fit_color, tc_color=tc_color)
 
-	print("Plotting critical temperature estimates . . . ")
+	print("Plotting error . . . ")
 	for J in Js:
-		for L in Ls:
-			plot_critical_temperatures("results", J, L, encoder_names, encoder_labels, encoder_colors, magnetization_color=magnetization_color, tc_color=tc_color, remove_bias=False)
-
-	print("Plotting times . . . ")
-	plot_times("results", encoder_names, encoder_labels, encoder_colors, preprocessing_bottoms, preprocessing_label=preprocessing_label, preprocessing_color=preprocessing_color)
+		plot_error_vs_lattice(results_dir, J, Ls, observable_names[:-1], observable_labels[:-1], observable_colors[:-1], N=256, fold=0, seed=0)
+		plot_error_vs_time(results_dir, J, observable_names[:-1], observable_labels[:-1], observable_colors[:-1], extrapolate=False, biased=True)
+		plot_error_vs_time(results_dir, J, observable_names, observable_labels, observable_colors, extrapolate=True, biased=True)
 
 	print("Tabulating generators . . . ")
-	GE_encoder_names = ["latent_equivariant", "latent_multiscale"]
-	GE_encoder_headings = ["GE-encoder", "GE-encoder (multiscale)"]
-	tabulate_generators("results", Js, GE_encoder_names, GE_encoder_headings)
+	tabulate_generators(results_dir, Js, "latent_equivariant")
 
 	print("Done!")
