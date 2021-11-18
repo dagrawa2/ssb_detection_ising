@@ -1,15 +1,14 @@
 import os
 import itertools
 import numpy as np
+from types import SimpleNamespace
 
-results_dir = "results8"
-Js = ["ferromagnetic", "antiferromagnetic"]
-Ls = [16, 32, 64, 128, "infty"]
+results_dir = "results4"
+Js = ["ferromagnetic"]
+Ls = [16, 32, 64, 128, None]
 Ns = [8, 16, 32, 64, 128, 256]
-N_tests = [256, 512, 1024, 2048]
 folds = [0, 1, 2, 3]
 seeds = [0, 1, 2]
-biased = True
 
 tc = 2/np.log(1+np.sqrt(2))
 
@@ -39,88 +38,50 @@ def build_path(results_dir, J, observable_name, L, N=None, fold=None, seed=None,
 	path = os.path.join(path, "L{:d}".format(L_test))
 	return path
 
-def gather_tc(results_dir, J, observable_name, L, N=None, folds=None, seeds=None, biased=False, key="yintercept"):
-	if observable_name == "latent_multiscale_4" and N < 8:
-		nan = np.full((len(N_tests)), "nan")
-		return nan, nan
-	if L is None or L == "infty":
-		return gather_tc_extrapolate(results_dir, J, observable_name, N=N, folds=folds, seeds=seeds, biased=biased, key=key)
+def gather_tc(results_dir, J, observable_name, L, N=None, folds=None, seeds=None, r2=False):
+	stats = ["mean", "std", "bias"]
+	key = SimpleNamespace(**{stat: stat for stat in stats})
+	if r2:
+		for stat in stats:
+			setattr(key, stat, "r2_"+stat)
 	if observable_name == "magnetization":
-		dir = build_path(results_dir, J, observable_name, L, subdir="processed")
-		with np.load(os.path.join(dir, "tc.npz")) as D:
-			means, stds = D["means"], D["stds"]
-			if biased:
-				means = means + D["biases"]
-		return means, stds
+		with np.load(os.path.join(build_path(results_dir, J, observable_name, L, subdir="processed"), "tc.npz")) as D:
+			mean, std = D[key.mean]+D[key.bias], D[key.std]
+		return mean, std
 	else:
 		means, stds = [], []
 		for (fold, seed) in itertools.product(folds, seeds):
-			dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed")
-			with np.load(os.path.join(dir, "tc.npz")) as D:
-				means.append(D["means"])
-				stds.append(D["stds"])
-				if biased:
-					means[-1] = D["means"] + D["biases"]
-		means = np.stack(means, 0)
-		stds = np.stack(stds, 0)
-		m = means.mean(0)
-		s = np.sqrt( (stds**2).mean(0) + means.std(0)**2 )
-		return m, s
-
-
-def gather_tc_extrapolate(results_dir, J, observable_name, N=None, folds=None, seeds=None, biased=False, key="yintercept"):
-	if observable_name == "magnetization":
-		dir = build_path(results_dir, J, observable_name, None, subdir="processed")
-		with np.load(os.path.join(dir, "tc_extrapolate.npz")) as D:
-			means, stds = D[key+"_means"][:,-1], D[key+"_stds"][:,-1]
-			if biased:
-				means = means + D[key+"_biases"][:,-1]
-		return means, stds
-	else:
-		means, stds = [], []
-		for (fold, seed) in itertools.product(folds, seeds):
-			dir = build_path(results_dir, J, observable_name, None, N=N, fold=fold, seed=seed, subdir="processed")
-			with np.load(os.path.join(dir, "tc_extrapolate.npz")) as D:
-				means.append(D[key+"_means"][:,-1])
-				stds.append(D[key+"_stds"][:,-1])
-				if biased:
-					means[-1] = D[key+"_means"][:,-1] + D[key+"_biases"][:,-1]
-		means = np.stack(means, 0)
-		stds = np.stack(stds, 0)
-		m = means.mean(0)
-		s = np.sqrt( (stds**2).mean(0) + means.std(0)**2 )
-		return m, s
+			with np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as D:
+				means.append(D[key.mean]+D[key.bias])
+				stds.append(D[key.std])
+		means = np.array(means)
+		stds = np.array(stds)
+		mean = means.mean()
+		std = np.sqrt( (stds**2).mean() + means.std()**2 )
+		return mean, std
 
 
 for J in Js:
 	print("{}\n===\n".format(J))
 	for L in Ls:
 		print("L = {}:".format(L))
-		means, stds = gather_tc(results_dir, J, "magnetization", L, biased=biased)
-		print("M: ", end="")
-		for (m, s) in zip(means, stds):
-			print("{}, ".format(tc_format(m, s)), end="")
-		print()
-		print("N, N_test, AE, GE, MS")
+		mean, std = gather_tc(results_dir, J, "magnetization", L)
+		print("M: {}".format(tc_format(mean, std)))
+		print("N, AE, GE, MS")
 		for N in Ns:
-			AE_means, AE_stds = gather_tc(results_dir, J, "latent", L, N=N, folds=folds, seeds=seeds, biased=biased)
-			GE_means, GE_stds = gather_tc(results_dir, J, "latent_equivariant", L, N=N, folds=folds, seeds=seeds, biased=biased)
-			MS_means, MS_stds = gather_tc(results_dir, J, "latent_multiscale_4", L, N=N, folds=folds, seeds=seeds, biased=biased)
-			for (N_test, AE_m, AE_s, GE_m, GE_s, MS_m, MS_s) in zip(N_tests, AE_means, AE_stds, GE_means, GE_stds, MS_means, MS_stds):
-				print("{:d}, {:d}, {}, {}, {}".format(N, N_test, tc_format(AE_m, AE_s), tc_format(GE_m, GE_s), tc_format(MS_m, MS_s)))
+			AE_mean, AE_std = gather_tc(results_dir, J, "latent", L, N=N, folds=folds, seeds=seeds)
+			GE_mean, GE_std = gather_tc(results_dir, J, "latent_equivariant", L, N=N, folds=folds, seeds=seeds)
+			MS_mean, MS_std = gather_tc(results_dir, J, "latent_multiscale_4", L, N=N, folds=folds, seeds=seeds)
+			print("{:d}, {}, {}, {}".format(N, tc_format(AE_mean, AE_std), tc_format(GE_mean, GE_std), tc_format(MS_mean, MS_std)))
 		print()
 
-	print("L = infty (r^2 value)")
-	means, stds = gather_tc(results_dir, J, "magnetization", "infty", biased=biased, key="r2")
-	print("M: ", end="")
-	for (m, s) in zip(means, stds):
-		print("{}, ".format(r2_format(m, s)), end="")
-	print()
-	print("N, N_test, AE, GE, MS")
+	print("L = None (r^2 value)")
+	mean, std = gather_tc(results_dir, J, "magnetization", None, r2=True)
+	print("M: {}".format(tc_format(mean, std)))
+	print("N, AE, GE, MS")
 	for N in Ns:
-		AE_means, AE_stds = gather_tc(results_dir, J, "latent", "infty", N=N, folds=folds, seeds=seeds, biased=biased, key="r2")
-		GE_means, GE_stds = gather_tc(results_dir, J, "latent_equivariant", "infty", N=N, folds=folds, seeds=seeds, biased=biased, key="r2")
-		MS_means, MS_stds = gather_tc(results_dir, J, "latent_multiscale_4", "infty", N=N, folds=folds, seeds=seeds, biased=biased, key="r2")
-		for (N_test, AE_m, AE_s, GE_m, GE_s, MS_m, MS_s) in zip(N_tests, AE_means, AE_stds, GE_means, GE_stds, MS_means, MS_stds):
-			print("{:d}, {:d}, {}, {}, {}".format(N, N_test, r2_format(AE_m, AE_s), r2_format(GE_m, GE_s), r2_format(MS_m, MS_s)))
+		AE_mean, AE_std = gather_tc(results_dir, J, "latent", None, N=N, folds=folds, seeds=seeds, r2=True)
+		GE_mean, GE_std = gather_tc(results_dir, J, "latent_equivariant", None, N=N, folds=folds, seeds=seeds, r2=True)
+		MS_mean, MS_std = gather_tc(results_dir, J, "latent_multiscale_4", None, N=N, folds=folds, seeds=seeds, r2=True)
+		print("{:d}, {}, {}, {}".format(N, r2_format(AE_mean, AE_std), r2_format(GE_mean, GE_std), r2_format(MS_mean, MS_std)))
 	print()

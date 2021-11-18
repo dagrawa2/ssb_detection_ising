@@ -26,7 +26,7 @@ def build_path(results_dir, J, observable_name, L, N=None, fold=None, seed=None,
 
 ###process magnetization, order parameter curves, and U_4 Binder cumulant curves
 
-def gather_magnetizations(data_dir, results_dir, J, L):
+def gather_magnetizations(data_dir, results_dir, J, L, N_test=None):
 	temperatures = []
 	measurements = []
 	L_dir = os.path.join(data_dir, J, "L{:d}".format(L))
@@ -34,11 +34,13 @@ def gather_magnetizations(data_dir, results_dir, J, L):
 		if temperature_dir[0] != "T":
 			continue
 		I = Ising()
-		Ms = I.magnetization(os.path.join(L_dir, temperature_dir), per_spin=True, staggered=(J=="antiferromagnetic"))
+		Ms = I.magnetization(os.path.join(L_dir, temperature_dir), per_spin=True, staggered=(J=="antiferromagnetic"))[-2::-2]
 		temperatures.append(I.T)
 		measurements.append(Ms)
 	temperatures = np.array(temperatures)
 	measurements = np.stack(measurements, 0)
+	if N_test is not None:
+		measurements = measurements[:,:N_test]
 	output_dir = "{}/{}/magnetization/L{:d}".format(results_dir, J, L)
 	os.makedirs(output_dir, exist_ok=True)
 	np.savez(os.path.join(output_dir, "measurements.npz"), temperatures=temperatures, measurements=measurements)
@@ -108,55 +110,40 @@ def lstsq_samples(x, y_samples, weights=None):
 	return fit_samples, r2_samples
 
 
-def calculate_critical_temperatures(results_dir, J, observable_name, L, N_tests, N=None, fold=None, seed=None, L_test=None):
+def calculate_critical_temperatures(results_dir, J, observable_name, L, N=None, fold=None, seed=None, L_test=None):
 	dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test)
 	measurements = np.load(os.path.join(dir, "measurements.npz"))
 	temperatures = measurements["temperatures"]
 	measurements = measurements["measurements"].T
-	output_dict = {"N_tests": N_tests, "means": [], "stds": [], "biases": [], "samples": []}
-	for N_test in N_tests:
-		samples = critical_temperature_samples(temperatures, U4_samples(measurements[:N_test]))
-		mean, std, bias = jackknife.calculate_mean_std(samples, remove_bias=True, return_bias=True)
-		samples = np.pad(samples, ((0, max(N_tests)-N_test),), constant_values=np.nan)
-		for (key, value) in [("means", mean), ("stds", std), ("biases", bias), ("samples", samples)]:
-			output_dict[key].append(value)
-	output_dict["samples"] = np.stack(output_dict["samples"], 0)
-	for (key, value) in output_dict.items():
-		output_dict[key] = np.asarray(value)
+	samples = critical_temperature_samples(temperatures, U4_samples(measurements))
+	mean, std, bias = jackknife.calculate_mean_std(samples, remove_bias=True, return_bias=True)
 	output_dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test, subdir="processed")
+	os.makedirs(output_dir, exist_ok=True)
+	np.savez(os.path.join(output_dir, "tc.npz"), mean=mean, std=std, bias=bias, samples=samples)
+
+
+def calculate_critical_temperature_extrapolates(results_dir, J, observable_name, Ls, N=None, fold=None, seed=None, jitter=1e-9):
+	load_tc = lambda L: np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz"))
+	x = 1/np.array(Ls)
+	y_samples = np.stack([load_tc(L)["samples"] for L in Ls], 0)
+	weights = 1/(np.array([float(load_tc(L)["std"]) for L in Ls]) + jitter)
+	fit_samples, r2_samples = lstsq_samples(x, y_samples, weights=weights)
+	samples = np.concatenate([fit_samples, r2_samples[None,:]], 0).T
+	mean, std, bias = jackknife.calculate_mean_std(samples, remove_bias=True, return_bias=True)
+	stats = ["mean", "std", "bias"]
+	values = [mean, std, bias]
+	kwds = ["yintercept", "slope", "r2"]
+	output_dict = {stat: value[0] for (stat, value) in zip(stats, values)}
+	for ((i, kwd), (stat, value)) in itertools.product(enumerate(kwds), zip(stats, values)):
+		output_dict["{}_{}".format(kwd, stat)] = value[i]
+	output_dir = build_path(results_dir, J, observable_name, None, N, fold, seed, subdir="processed")
 	os.makedirs(output_dir, exist_ok=True)
 	np.savez(os.path.join(output_dir, "tc.npz"), **output_dict)
 
 
-def calculate_critical_temperature_extrapolates(results_dir, J, observable_name, Ls, N_tests, N=None, fold=None, seed=None, jitter=1e-9):
-	load_tc = lambda L: np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz"))
-	x = 1/np.array(Ls)
-	y_samples = np.stack([load_tc(L)["samples"] for L in Ls], 1)
-	weights = 1/(np.stack([load_tc(L)["stds"] for L in Ls], 1) + jitter)
-	n_Lss = np.arange(2, len(Ls)+1)
-	output_dict = {"N_tests": np.asarray(N_tests), "n_Lss": n_Lss}
-	for key in ["yintercept", "slope", "r2"]:
-		for stats in ["means", "stds", "biases"]:
-			output_dict["{}_{}".format(key, stats)] = []
-	for (i, N_test) in enumerate(N_tests):
-		for n_Ls in n_Lss:
-			fit_samples, r2_samples = lstsq_samples(x[:n_Ls], y_samples[i,:n_Ls,:N_test], weights=weights[i,:n_Ls])
-			samples = np.concatenate([fit_samples, r2_samples[None,:]], 0).T
-			mean, std, bias = jackknife.calculate_mean_std(samples, remove_bias=True, return_bias=True)
-			for (stats, value) in [("means", mean), ("stds", std), ("biases", bias)]:
-				for (j, key) in enumerate(["yintercept", "slope", "r2"]):
-					output_dict["{}_{}".format(key, stats)].append(value[j])
-	for (key, value) in output_dict.items():
-		if "means" in key or "stds" in key or "biases" in key:
-			output_dict[key] = np.array(value).reshape((len(N_tests), len(n_Lss)))
-	output_dir = build_path(results_dir, J, observable_name, None, N, fold, seed, subdir="processed")
-	os.makedirs(output_dir, exist_ok=True)
-	np.savez(os.path.join(output_dir, "tc_extrapolate.npz"), **output_dict)
-
-
 ### process execution times
 
-def calculate_times(results_dir, J, observable_name, L, N_tests, N=None, fold=None, seed=None, L_test=None):
+def calculate_times(results_dir, J, observable_name, L, N_test, N=None, fold=None, seed=None, L_test=None):
 	L_dir = os.path.join("data", J, "L{:d}".format(L))	
 	T_dirs = sorted(os.listdir(L_dir))
 	T_dirs = [os.path.join(L_dir, dir) for dir in T_dirs if dir[0] == "T"]
@@ -181,77 +168,18 @@ def calculate_times(results_dir, J, observable_name, L, N_tests, N=None, fold=No
 		with open(os.path.join(L_dir, "aggregate", "times.json"), "r") as fp:
 			key = "states_symmetric" if results["args"]["symmetric"] else "states"
 			processing_time = json.load(fp)[key]
-	output_dict = {"N_tests": N_tests, "times": []}
-	for N_test in N_tests:
-		t = training_time \
-			+ (generation_time + processing_time) * (N+N_test)/N_max
-		output_dict["times"].append(t)
-	output_dict = {key: np.array(value) for (key, value) in output_dict.items()}
+	t = training_time \
+		+ (generation_time + processing_time) * (N+N_test)/N_max
 	output_dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test, subdir="processed")
 	os.makedirs(output_dir, exist_ok=True)
-	np.savez(os.path.join(output_dir, "times.npz"), **output_dict)
+	np.savez(os.path.join(output_dir, "time.npz"), time=t)
 
 
-def calculate_time_extrapolates(results_dir, J, observable_name, Ls, N_tests, N=None, fold=None, seed=None):
-	load_times = lambda L: np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "times.npz"))
-	times = np.stack([load_times(L)["times"] for L in Ls], 1)
-	n_Lss = np.arange(2, len(Ls)+1)
-	output_dict = {"N_tests": np.asarray(N_tests), "n_Lss": n_Lss}
-	output_dict["times"] = np.stack([times[:,:n_Ls].sum(1) for n_Ls in n_Lss], 1)
-	output_dir = build_path(results_dir, J, observable_name, None, N, fold, seed, subdir="processed")
+def calculate_time_extrapolates(results_dir, J, observable_name, Ls, N=None, fold=None, seed=None):
+	t = sum([float( np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "time.npz"))["time"] ) for L in Ls])
+	output_dir = build_path(results_dir, J, observable_name, None, N=N, fold=fold, seed=seed, subdir="processed")
 	os.makedirs(output_dir, exist_ok=True)
-	np.savez(os.path.join(output_dir, "times_extrapolate.npz"), **output_dict)
-
-
-### gather critical temperature vs time data
-
-def gather_tc_vs_time(results_dir, J, observable_name, Ls, Ns=None, folds=None, seeds=None):
-	suffixes = ["means", "stds", "biases"]
-	output_dict = {"times": []}
-	for s in suffixes:
-		output_dict["tc_"+s] = []
-	if observable_name == "magnetization":
-		for L in Ls:
-			with np.load(os.path.join(build_path(results_dir, J, observable_name, L, subdir="processed"), "times.npz")) as D:
-				output_dict["times"].append(D["times"])
-			with np.load(os.path.join(build_path(results_dir, J, observable_name, L, subdir="processed"), "tc.npz")) as D:
-				for s in suffixes:
-					output_dict["tc_"+s].append(D[s])
-	else:
-		for (L, N, fold, seed) in itertools.product(Ls, Ns, folds, seeds):
-			with np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "times.npz")) as D:
-				output_dict["times"].append(D["times"])
-			with np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as D:
-				for s in suffixes:
-					output_dict["tc_"+s].append(D[s])
-	output_dict = {key: np.concatenate(value, 0) for (key, value) in output_dict.items()}
-	output_dir = os.path.join(results_dir, "processed", J, observable_name)
-	os.makedirs(output_dir, exist_ok=True)
-	np.savez(os.path.join(output_dir, "tc_vs_time.npz"), **output_dict)
-
-
-def gather_tc_vs_time_extrapolate(results_dir, J, observable_name, Ns=None, folds=None, seeds=None):
-	suffixes = ["means", "stds", "biases"]
-	output_dict = {"times": []}
-	for s in suffixes:
-		output_dict["tc_"+s] = []
-	if observable_name == "magnetization":
-		with np.load(os.path.join(build_path(results_dir, J, observable_name, None, subdir="processed"), "times_extrapolate.npz")) as D:
-			output_dict["times"].append(D["times"])
-		with np.load(os.path.join(build_path(results_dir, J, observable_name, None, subdir="processed"), "tc_extrapolate.npz")) as D:
-			for s in suffixes:
-				output_dict["tc_"+s].append(D["yintercept_"+s])
-	else:
-		for (N, fold, seed) in itertools.product(Ns, folds, seeds):
-			with np.load(os.path.join(build_path(results_dir, J, observable_name, None, N=N, fold=fold, seed=seed, subdir="processed"), "times_extrapolate.npz")) as D:
-				output_dict["times"].append(D["times"])
-			with np.load(os.path.join(build_path(results_dir, J, observable_name, None, N=N, fold=fold, seed=seed, subdir="processed"), "tc_extrapolate.npz")) as D:
-				for s in suffixes:
-					output_dict["tc_"+s].append(D["yintercept_"+s])
-	output_dict = {key: np.concatenate(value, 0).T for (key, value) in output_dict.items()}
-	output_dir = os.path.join(results_dir, "processed", J, observable_name)
-	os.makedirs(output_dir, exist_ok=True)
-	np.savez(os.path.join(output_dir, "tc_vs_time_extrapolate.npz"), **output_dict)
+	np.savez(os.path.join(output_dir, "time.npz"), time=t)
 
 
 ### process symmetry generators
@@ -274,106 +202,70 @@ def calculate_generators(results_dir, Js, encoder_names, Ls, Ns, folds, seeds):
 
 
 if __name__ == "__main__":
-	results_dir = "results3"
-	Js = ["ferromagnetic", "antiferromagnetic"]
+	results_dir = "results4"
+	Js = ["ferromagnetic"]
 	Ls = [16, 32, 64, 128]
 	Ns = [8, 16, 32, 64, 128, 256]
-	N_tests = [256, 512, 1024, 2048]
-	observable_names = ["magnetization", "latent", "latent_equivariant"]
-	encoder_names = ["latent", "latent_equivariant", "latent_multiscale_2", "latent_multiscale_4"]
+	N_test = 2048
 
-	Ns_dict = {name: Ns for name in encoder_names}
-	Ns_dict["latent_multiscale_2"] = [N for N in Ns if N >= 8]
-	Ns_dict["latent_multiscale_4"] = [N for N in Ns if N >= 8]
+	observable_names = ["magnetization", "latent", "latent_equivariant"]
+	encoder_names = ["latent", "latent_equivariant", "latent_multiscale_4"]
 
 	folds = [0, 1, 2, 3]
 	seeds = [0, 1, 2]
 
-#	print("Gathering magnetizations . . . ")
-#	for J in Js:
-#		for L in Ls:
-#			gather_magnetizations("data", results_dir, J, L)
+	print("Gathering magnetizations . . . ")
+	for (J, L) in itertools.product(Js, Ls):
+		gather_magnetizations("data", results_dir, J, L)
 
 	print("Calculating stats . . . ")
-	for J in Js:
-		for name in observable_names:
-			calculate_stats(results_dir, J, name, 128, 2048, N=256, fold=0, seed=0)
+	for (J, name) in itertools.product(Js, observable_names):
+		calculate_stats(results_dir, J, name, Ls[-1], N_test, N=Ns[-1], fold=0, seed=0)
 
 	print("Calculating critical temperatures . . . ")
 	for J in Js:
 		print("J:", J)
 		print("magnetization")
 		for L in Ls:
-			calculate_critical_temperatures(results_dir, J, "magnetization", L, N_tests)
+			calculate_critical_temperatures(results_dir, J, "magnetization", L)
 		for encoder_name in encoder_names:
 			print(encoder_name)
-			for (L, N, fold, seed) in itertools.product(Ls, Ns_dict[encoder_name], folds, seeds):
+			for (L, N, fold, seed) in itertools.product(Ls, Ns, folds, seeds):
 				if os.path.exists(os.path.join(build_path(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")):
 					continue
-				calculate_critical_temperatures(results_dir, J, encoder_name, L, N_tests, N=N, fold=fold, seed=seed)
+				calculate_critical_temperatures(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed)
 
 	print("Calculating critical temperature extrapolates . . . ")
 	for J in Js:
 		print("J:", J)
 		print("magnetization")
-		calculate_critical_temperature_extrapolates(results_dir, J, "magnetization", Ls, N_tests)
+		calculate_critical_temperature_extrapolates(results_dir, J, "magnetization", Ls)
 		for encoder_name in encoder_names:
 			print(encoder_name)
-			for (N, fold, seed) in itertools.product(Ns_dict[encoder_name], folds, seeds):
-				calculate_critical_temperature_extrapolates(results_dir, J, encoder_name, Ls, N_tests, N=N, fold=fold, seed=seed)
+			for (N, fold, seed) in itertools.product(Ns, folds, seeds):
+				calculate_critical_temperature_extrapolates(results_dir, J, encoder_name, Ls, N=N, fold=fold, seed=seed)
 
 	print("Calculating execution times . . . ")
 	for J in Js:
 		print("J:", J)
 		print("magnetization")
 		for L in Ls:
-			calculate_times(results_dir, J, "magnetization", L, N_tests)
+			calculate_times(results_dir, J, "magnetization", L, N_test)
 		for encoder_name in encoder_names:
 			print(encoder_name)
-			for (L, N, fold, seed) in itertools.product(Ls, Ns_dict[encoder_name], folds, seeds):
-				calculate_times(results_dir, J, encoder_name, L, N_tests, N=N, fold=fold, seed=seed)
+			for (L, N, fold, seed) in itertools.product(Ls, Ns, folds, seeds):
+				calculate_times(results_dir, J, encoder_name, L, N_test, N=N, fold=fold, seed=seed)
 
 	print("Calculating execution time extrapolates . . . ")
 	for J in Js:
 		print("J:", J)
 		print("magnetization")
 		for L in Ls:
-			calculate_time_extrapolates(results_dir, J, "magnetization", Ls, N_tests)
+			calculate_time_extrapolates(results_dir, J, "magnetization", Ls)
 		for encoder_name in encoder_names:
 			print(encoder_name)
-			for (N, fold, seed) in itertools.product(Ns_dict[encoder_name], folds, seeds):
-				calculate_time_extrapolates(results_dir, J, encoder_name, Ls, N_tests, N=N, fold=fold, seed=seed)
-
-	print("Gathering T_c vs time data . . . ")
-	for J in Js:
-		print("J:", J)
-		print("magnetization")
-		gather_tc_vs_time(results_dir, J, "magnetization", Ls)
-		for encoder_name in encoder_names:
-			print(encoder_name)
-			gather_tc_vs_time(results_dir, J, encoder_name, Ls, Ns=Ns_dict[encoder_name], folds=folds, seeds=seeds)
-
-	print("Gathering T_c vs time extrapolate data . . . ")
-	for J in Js:
-		print("J:", J)
-		print("magnetization")
-		gather_tc_vs_time_extrapolate(results_dir, J, "magnetization")
-		for encoder_name in encoder_names:
-			print(encoder_name)
-			gather_tc_vs_time_extrapolate(results_dir, J, encoder_name, Ns=Ns_dict[encoder_name], folds=folds, seeds=seeds)
-
-	print("Combining multiscale T_c vs time extrapolate data . . . ")
-	row_dict = {"latent_multiscale_2": 0, "latent_multiscale_4": 2}
-	for J in Js:
-		Ds = []
-		for (name, row) in row_dict.items():
-			with np.load(os.path.join(results_dir, "processed", J, name, "tc_vs_time_extrapolate.npz")) as fp:
-				D = dict(fp)
-			Ds.append( {key: value[row] for (key, value) in D.items()} )
-		D = {key: np.stack([D[key] for D in Ds], 0) for key in Ds[0].keys()}
-		output_dir = os.path.join(results_dir, "processed", J, "latent_multiscale")
-		os.makedirs(output_dir, exist_ok=True)
-		np.savez(os.path.join(output_dir, "tc_vs_time_extrapolate.npz"), **D)
+			for (N, fold, seed) in itertools.product(Ns, folds, seeds):
+				calculate_time_extrapolates(results_dir, J, encoder_name, Ls, N=N, fold=fold, seed=seed)
 
 	print("Calculating symmetry generators . . . ")
 	calculate_generators(results_dir, Js, ["latent_equivariant"], Ls, Ns, folds, seeds)
