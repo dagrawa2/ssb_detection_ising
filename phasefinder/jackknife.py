@@ -8,16 +8,21 @@ def calculate_samples(data):
 	samples = np.concatenate((estimates[None,:], samples), 0)
 	return samples
 
-def calculate_mean_std(samples, remove_bias=True, return_bias=False):
+def calculate_mean_std(samples, reduce_bias=True, return_bias=False):
 	D = samples.ndim
 	if D == 1:
 		samples = samples[:,None]
 	estimates, samples = samples[0], samples[1:]
-	std = np.sqrt((samples.shape[0]-1)*np.mean((samples - estimates[None,:])**2, 0))
-	bias = (samples.shape[0]-1)*(samples.mean(0) - estimates)
-	mean = estimates-bias if remove_bias else estimates
+	N = samples.shape[0]
+	mean = samples.mean(0)
+	var = (N-1)*samples.var(0)
+	mean_bias = N*(estimates-mean)
+	var_bias = (N-1)*(estimates-mean)**2
+	if reduce_bias:
+		mean = mean + mean_bias
+		var = var + var_bias
 	if D == 1:
-		mean, std, bias = mean.item(), std.item(), bias.item()
+		mean, var, mean_bias, var_bias = mean.item(), var.item(), mean_bias.item(), var_bias.item()
 	if return_bias:
-		return mean, std, bias
-	return mean, std
+		return mean, np.sqrt(var), mean_bias, np.sqrt(var_bias)
+	return mean, np.sqrt(var)

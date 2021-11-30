@@ -4,5 +4,6 @@ from . import datasets
 from . import groups
 from . import jackknife
 from . import models
+from . import optimization
 from . import trainers
 from . import utils

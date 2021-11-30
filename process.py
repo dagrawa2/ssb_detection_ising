@@ -6,6 +6,7 @@ from scipy.linalg import lstsq
 from types import SimpleNamespace
 
 from phasefinder import jackknife
+from phasefinder.optimization import cvxopt_solve_qp
 from phasefinder.datasets import Ising
 from phasefinder.utils import build_path
 
@@ -79,6 +80,48 @@ def critical_temperature_samples(temperatures, u4samples):
 	return tc_samples
 
 
+def minimize_std(temperatures, samples):
+	upper_bound_indices = np.less(temperatures[:,None], samples[None,:]).sum(0)
+	upper_bounds = temperatures[upper_bound_indices]
+	lower_bounds = temperatures[upper_bound_indices-1]
+	n = len(samples)-1
+	P = np.eye(n+1)
+	P[:,0] = -1
+	P[0,:] = -1
+	P[0,0] = n
+	P = P.astype(np.double)
+	q = np.zeros((n+1)).astype(np.double)
+	G = np.concatenate([np.eye(n+1), -np.eye(n+1)], 0).astype(np.double)
+	h = np.concatenate([upper_bounds, -lower_bounds], 0).astype(np.double)
+	new_samples = cvxopt_solve_qp(P, q, G=G, h=h)
+	new_samples = new_samples + ( np.min(upper_bounds-new_samples) - np.min(new_samples-lower_bounds) )/2
+	return new_samples
+
+
+def minimize_std_without_bias(temperatures, samples):
+	upper_bound_indices = np.less(temperatures[:,None], samples[None,:]).sum(0)
+	upper_bounds = temperatures[upper_bound_indices]
+	lower_bounds = temperatures[upper_bound_indices-1]
+	upper_bounds = upper_bounds[1:]
+	lower_bounds = lower_bounds[1:]
+	n = len(samples)-1
+	P = np.eye(n+1)
+	P[:,0] = -1
+	P[0,:] = -1
+	P[0,0] = n
+	P = P.astype(np.double)
+	q = np.zeros((n+1)).astype(np.double)
+	G = np.concatenate([np.eye(n+1)[1:], -np.eye(n+1)[1:]], 0).astype(np.double)
+	h = np.concatenate([upper_bounds, -lower_bounds], 0).astype(np.double)
+	A = np.full((1, n+1), -1, dtype=np.double)
+	A[0,0] = n
+	b = np.zeros((1), dtype=np.double)
+	new_samples = cvxopt_solve_qp(P, q, G=G, h=h, A=A, b=b)
+	new_samples = new_samples + ( np.min(upper_bounds-new_samples[1:]) - np.min(new_samples[1:]-lower_bounds) )/2
+	new_samples[0] = new_samples[1:].mean()
+	return new_samples
+
+
 def lstsq_samples(x, y_samples, weights=None):
 	ones = np.ones((x.shape[0], 1))
 	if weights is None:
@@ -96,28 +139,33 @@ def lstsq_samples(x, y_samples, weights=None):
 	return fit_samples, r2_samples
 
 
-def calculate_critical_temperatures(results_dir, J, observable_name, L, N=None, fold=None, seed=None, L_test=None):
+def calculate_critical_temperatures(results_dir, J, observable_name, L, N=None, fold=None, seed=None, L_test=None, optimize_std=False, optimize_reduce_bias=True):
 	dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test)
 	measurements = np.load(os.path.join(dir, "measurements.npz"))
 	temperatures = measurements["temperatures"]
 	measurements = measurements["measurements"].T
 	samples = critical_temperature_samples(temperatures, U4_samples(measurements))
-	mean, std, bias = jackknife.calculate_mean_std(samples, remove_bias=True, return_bias=True)
+	if optimize_std:
+		if optimize_reduce_bias:
+			samples = minimize_std(temperatures, samples)
+		else:
+			samples = minimize_std_without_bias(temperatures, samples)
+	mean, std, mean_bias, std_bias = jackknife.calculate_mean_std(samples, reduce_bias=False, return_bias=True)
 	output_dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test, subdir="processed")
 	os.makedirs(output_dir, exist_ok=True)
-	np.savez(os.path.join(output_dir, "tc.npz"), mean=mean, std=std, bias=bias, samples=samples)
+	np.savez(os.path.join(output_dir, "tc.npz"), mean=mean, std=std, mean_bias=mean_bias, std_bias=std_bias, samples=samples)
 
 
-def calculate_critical_temperature_extrapolates(results_dir, J, observable_name, Ls, N=None, fold=None, seed=None, jitter=1e-9):
+def calculate_critical_temperature_extrapolates(results_dir, J, observable_name, Ls, N=None, fold=None, seed=None, jitter=1e-6):
 	load_tc = lambda L: np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz"))
 	x = 1/np.array(Ls)
 	y_samples = np.stack([load_tc(L)["samples"] for L in Ls], 0)
 	weights = 1/(np.array([float(load_tc(L)["std"]) for L in Ls]) + jitter)
 	fit_samples, r2_samples = lstsq_samples(x, y_samples, weights=weights)
 	samples = np.concatenate([fit_samples, r2_samples[None,:]], 0).T
-	mean, std, bias = jackknife.calculate_mean_std(samples, remove_bias=True, return_bias=True)
-	stats = ["mean", "std", "bias"]
-	values = [mean, std, bias]
+	mean, std, mean_bias, std_bias = jackknife.calculate_mean_std(samples, reduce_bias=False, return_bias=True)
+	stats = ["mean", "std", "mean_bias", "std_bias"]
+	values = [mean, std, mean_bias, std_bias]
 	kwds = ["yintercept", "slope", "r2"]
 	output_dict = {stat: value[0] for (stat, value) in zip(stats, values)}
 	for ((i, kwd), (stat, value)) in itertools.product(enumerate(kwds), zip(stats, values)):
@@ -175,7 +223,7 @@ def calculate_functional_cors(results_dir, J, observable_name, L, N=None, fold=N
 	output_dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test, subdir="processed")
 	os.makedirs(output_dir, exist_ok=True)
 	if L is None:
-		np.savez(os.path.join(output_dir, "cor.npz"), magnetization=0, onsager_mean=0, onsager_std=0, onsager_bias=0)
+		np.savez(os.path.join(output_dir, "cor.npz"), magnetization=0, onsager_mean=0, onsager_std=0, onsager_mean_bias=0, onsager_std_bias=0)
 		return
 	dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test)
 	measurements = np.load(os.path.join(dir, "measurements.npz"))
@@ -186,28 +234,28 @@ def calculate_functional_cors(results_dir, J, observable_name, L, N=None, fold=N
 	onsager = np.where(temperatures<2/np.log(1+np.sqrt(2)), np.clip(1-1/np.sinh(2/temperatures), 0, None)**(1/8), np.zeros_like(temperatures))
 	samples = jackknife.calculate_samples(np.abs(measurements))
 	samples = samples.dot(onsager)/np.sqrt(np.sum(samples**2, 1)*np.sum(onsager**2))
-	mean, std, bias = jackknife.calculate_mean_std(samples, remove_bias=True, return_bias=True)
-	np.savez(os.path.join(output_dir, "cor.npz"), magnetization=cor, onsager_mean=mean, onsager_std=std, onsager_bias=bias)
+	mean, std, mean_bias, std_bias = jackknife.calculate_mean_std(samples, reduce_bias=False, return_bias=True)
+	np.savez(os.path.join(output_dir, "cor.npz"), magnetization=cor, onsager_mean=mean, onsager_std=std, onsager_mean_bias=mean_bias, onsager_std_bias=std_bias)
 
 
 ### gather critical temperatures, times, and correlations into CSV
 
-def aggregate_tc(results_dir, J, observable_name, L, N=None, folds=None, seeds=None, jackknife_std=True, r2=False):
-	stats = ["mean", "std", "bias"]
+def aggregate_tc(results_dir, J, observable_name, L, N=None, folds=None, seeds=None, reduce_bias=False, jackknife_std=True, r2=False):
+	stats = ["mean", "std", "mean_bias", "std_bias"]
 	key = SimpleNamespace(**{stat: stat for stat in stats})
 	if r2:
 		for stat in stats:
 			setattr(key, stat, "r2_"+stat)
 	if observable_name == "magnetization":
 		with np.load(os.path.join(build_path(results_dir, J, observable_name, L, subdir="processed"), "tc.npz")) as D:
-			mean, std = D[key.mean]+D[key.bias], D[key.std]*int(jackknife_std)
+			mean, std = D[key.mean]+D[key.mean_bias]*int(reduce_bias), np.sqrt(D[key.std]**2+D[key.std_bias]**2*int(reduce_bias))*int(jackknife_std)
 		return mean, std
 	else:
 		means, stds = [], []
 		for (fold, seed) in itertools.product(folds, seeds):
 			with np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as D:
-				means.append(D[key.mean]+D[key.bias])
-				stds.append(D[key.std]*int(jackknife_std))
+				means.append(D[key.mean]+D[key.mean_bias]*int(reduce_bias))
+				stds.append(np.sqrt(D[key.std]**2+D[key.std_bias]**2*int(reduce_bias))*int(jackknife_std))
 		means = np.array(means)
 		stds = np.array(stds)
 		mean = means.mean()
@@ -230,19 +278,19 @@ def aggregate_time(results_dir, J, observable_name, L, N=None, folds=None, seeds
 		return t
 
 
-def aggregate_cor(results_dir, J, observable_name, L, N=None, folds=None, seeds=None, key="magnetization", func=np.abs, jackknife_std=True):
+def aggregate_cor(results_dir, J, observable_name, L, N=None, folds=None, seeds=None, key="magnetization", func=np.abs, reduce_bias=False, jackknife_std=True):
 	assert key in ["magnetization", "onsager"], "Keyword argument key must be either magnetization or onsager; got {} instead.".format(reduce)
 	if observable_name == "magnetization":
 		with np.load(os.path.join(build_path(results_dir, J, observable_name, L, subdir="processed"), "cor.npz")) as D:
-			mean = func(D["magnetization"]) if key=="magnetization" else D["onsager_mean"]+D["onsager_bias"]
-			std = 0 if key=="magnetization" else D["onsager_std"]*int(jackknife_std)
+			mean = func(D["magnetization"]) if key=="magnetization" else D["onsager_mean"]+D["onsager_mean_bias"]*int(reduce_bias)
+			std = 0 if key=="magnetization" else np.sqrt(D["onsager_std"]**2+D["onsager_std_bias"]**2*int(reduce_bias))*int(jackknife_std)
 		return mean, std
 	else:
 		means, stds = [], []
 		for (fold, seed) in itertools.product(folds, seeds):
 			with np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "cor.npz")) as D:
-				mean = func(D["magnetization"]) if key=="magnetization" else D["onsager_mean"]+D["onsager_bias"]
-				std = 0 if key=="magnetization" else D["onsager_std"]*int(jackknife_std)
+				mean = func(D["magnetization"]) if key=="magnetization" else D["onsager_mean"]+D["onsager_mean_bias"]*int(reduce_bias)
+				std = 0 if key=="magnetization" else np.sqrt(D["onsager_std"]**2+D["onsager_std_bias"]**2*int(reduce_bias))*int(jackknife_std)
 				means.append(mean)
 				stds.append(std)
 		means = np.array(means)
@@ -252,22 +300,22 @@ def aggregate_cor(results_dir, J, observable_name, L, N=None, folds=None, seeds=
 		return mean, std
 
 
-def gather(results_dir, Js, observable_names, Ls, Ns, folds, seeds, jackknife_std=True):
+def gather(results_dir, Js, observable_names, Ls, Ns, folds, seeds, tc_reduce_bias=False, cor_reduce_bias=True, jackknife_std=True):
 	tc = 2/np.log(1+np.sqrt(2))
 	output_dir = 	os.path.join(results_dir, "processed")
 	os.makedirs(output_dir, exist_ok=True)
 	with open(os.path.join(output_dir, "gathered.csv"), "w") as fp:
 		fp.write("J,L,observable,N,tc_mean,tc_std,generation_time,preprocessing_time,training_time,cor_magnetization_mean,cor_magnetization_std,cor_magnetization_sign,cor_onsager_mean,cor_onsager_std\n")
 		for (J, L, observable_name, N) in itertools.product(Js, Ls, observable_names, Ns):
-			tc_mean, tc_std = aggregate_tc(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, jackknife_std=jackknife_std)
+			tc_mean, tc_std = aggregate_tc(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, reduce_bias=tc_reduce_bias, jackknife_std=jackknife_std)
 			tc_mean = 100*(tc_mean/tc - 1)
 			tc_std = 100*tc_std/tc
 			generation_time = aggregate_time(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="generation", reduce=np.mean)/60
 			preprocessing_time = aggregate_time(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="preprocessing", reduce=np.mean)/60
 			training_time = aggregate_time(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="training", reduce=np.sum)/60
-			cor_magnetization_mean, cor_magnetization_std = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="magnetization", jackknife_std=jackknife_std)
-			cor_onsager_mean, cor_onsager_std = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="onsager", jackknife_std=jackknife_std)
-			cor_magnetization_sign, _ = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="magnetization", func=np.sign, jackknife_std=jackknife_std)
+			cor_magnetization_mean, cor_magnetization_std = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="magnetization", reduce_bias=cor_reduce_bias, jackknife_std=jackknife_std)
+			cor_onsager_mean, cor_onsager_std = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="onsager", reduce_bias=cor_reduce_bias, jackknife_std=jackknife_std)
+			cor_magnetization_sign, _ = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="magnetization", func=np.sign, reduce_bias=cor_reduce_bias, jackknife_std=jackknife_std)
 			L_str = "{:d}".format(L) if L is not None else "inf"
 			fp.write("{},{},{},{:d},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f}\n".format(J, L, observable_name, N, tc_mean, tc_std, generation_time, preprocessing_time, training_time, cor_magnetization_mean, cor_magnetization_std, cor_magnetization_sign, cor_onsager_mean, cor_onsager_std))
 
@@ -305,6 +353,7 @@ if __name__ == "__main__":
 	folds = list(range(8))
 	seeds = list(range(3))
 
+	"""
 	print("Gathering magnetizations . . . ")
 	for (J, L) in itertools.product(Js, Ls):
 		gather_magnetizations("data", results_dir, J, L, N_test=N_test)
@@ -318,13 +367,13 @@ if __name__ == "__main__":
 		print("J:", J)
 		print("magnetization")
 		for L in Ls:
-			calculate_critical_temperatures(results_dir, J, "magnetization", L)
+			calculate_critical_temperatures(results_dir, J, "magnetization", L, optimize_std=True, optimize_reduce_bias=True)
 		for encoder_name in encoder_names:
 			print(encoder_name)
 			for (L, N, fold, seed) in itertools.product(Ls, Ns, folds, seeds):
-				if os.path.exists(os.path.join(build_path(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")):
-					continue
-				calculate_critical_temperatures(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed)
+#				if os.path.exists(os.path.join(build_path(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")):
+#					continue
+				calculate_critical_temperatures(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed, optimize_std=True, optimize_reduce_bias=True)
 
 	print("Calculating critical temperature extrapolates . . . ")
 	for J in Js:
@@ -368,9 +417,10 @@ if __name__ == "__main__":
 			print(encoder_name)
 			for (L, N, fold, seed) in itertools.product(Ls+[None], Ns, folds, seeds):
 				calculate_functional_cors(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed)
+	"""
 
 	print("Gathering results into CSV . . . ")
-	gather(results_dir, Js, ["magnetization"]+encoder_names, Ls+[None], Ns, folds, seeds, jackknife_std=False)
+	gather(results_dir, Js, ["magnetization"]+encoder_names, Ls+[None], Ns, folds, seeds, tc_reduce_bias=False, cor_reduce_bias=True, jackknife_std=True)
 
 	print("Calculating symmetry generators . . . ")
 	calculate_generators(results_dir, Js, ["latent_equivariant"], Ls, Ns, folds, seeds)
