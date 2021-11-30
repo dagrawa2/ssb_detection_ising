@@ -20,7 +20,7 @@ def subplot_stat(results_dir, J, observable_name, L, N=None, fold=None, seed=Non
 	with np.load(os.path.join(dir, "stats.npz")) as fp:
 		stats = dict(fp)
 	with np.load(os.path.join(dir, "tc.npz")) as fp:
-		tc_estimate = fp["mean"]+fp["bias"]
+		tc_estimate = fp["mean"]
 	tc_exact = 2/np.log(1+np.sqrt(2))
 	if what == "distribution":
 		stats["distribution_range"] = stats["distribution_range"].tolist() if "distribution_range" in stats else [-1, 1]
@@ -172,9 +172,9 @@ def subplot_tc_vs_lattice(results_dir, J, Ls, observable_names, labels, colors, 
 		y = []
 		for L in Ls:
 			with np.load(os.path.join(build_path(results_dir, J, name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as fp:
-				y.append( fp["mean"]+fp["bias"] )
+				y.append( fp["mean"] )
 		with np.load(os.path.join(build_path(results_dir, J, name, None, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as fp:
-			slope, intercept = fp["slope_mean"]+fp["slope_bias"], fp["yintercept_mean"]+fp["yintercept_bias"]
+			slope, intercept = fp["slope_mean"], fp["yintercept_mean"]
 		yhat = slope*x_pnts + intercept
 		y, yhat = tc2err(y), tc2err(yhat)
 		plt.scatter(x, y, alpha=0.7, color=colors[name], label=labels[name])
@@ -273,7 +273,7 @@ def tabulate_generators(results_dir, Js, encoder_name):
 	with open(os.path.join(output_dir, "generators.tex"), "w") as fp:
 		fp.write("\\begin{{tabular}}{{c{}}}\n".format(S_columns))
 		fp.write("\\toprule\n")
-		fp.write("\\quad & Spatial & Internal \\\\\n")
+		fp.write("\\quad & {Spatial} & {Internal} \\\\\n")
 		fp.write("\\midrule\n")
 		for J in Js:
 			fp.write(J.capitalize())
