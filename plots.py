@@ -80,10 +80,10 @@ def plot_stat(results_dir, Js, observable_names, L, N=None, fold=None, seed=None
 ### plot critical temperature estimates
 
 def y_minmax(means, stds, padding=0.05):
-	y_min = (means-stds).min()
-	y_max = (means+stds).max()
+	y_min = (means-stds*np.less(means, 0).astype(np.int)).min()
+	y_max = (means+stds*np.greater(means, 0).astype(np.int)).max()
 	y_range = y_max-y_min
-	y_min = max(0, y_min - padding*y_range)
+	y_min = y_min - padding*y_range
 	y_max = y_max + padding*y_range
 	return y_min, y_max
 
@@ -93,6 +93,17 @@ def bar_width_shifts(n_bars):
 	width = total_width/n_bars
 	shifts = np.array([-total_width/2 + total_width/(2*n_bars)*(2*m+1) for m in range(n_bars)])
 	return width, shifts
+
+
+def bar_yerrs(ys, errs):
+	yerrs = []
+	for (y, err) in zip(ys, errs):
+		if y >= 0:
+			yerrs.append([0, err])
+		else:
+			yerrs.append([err, 0])
+	yerrs = np.array(yerrs).T
+	return yerrs
 
 
 def get_unique_legend_handles_labels(fig):
@@ -108,10 +119,9 @@ def subplot_tc(results_dir, J, L, Ns, encoder_names, labels, colors, xlabel=True
 	data = data[data.J.eq(J) & data.L.eq(str(L))]
 	y_min, y_max = y_minmax(data.tc_mean.values, data.tc_std.values)
 	x = np.arange(len(Ns))
-	augment = lambda x: np.stack([np.zeros_like(x), x], 0)
 	width, shifts = bar_width_shifts(len(encoder_names))
 	for (name, shift) in zip(encoder_names, shifts):
-		plt.bar(x+shift, data[data.observable.eq(name)].tc_mean.values, width, yerr=augment(data[data.observable.eq(name)].tc_std.values), capsize=5, ecolor=colors[name], color=colors[name], label=labels[name])
+		plt.bar(x+shift, data[data.observable.eq(name)].tc_mean.values, width, yerr=bar_yerrs(data[data.observable.eq(name)].tc_mean.values, data[data.observable.eq(name)].tc_std.values), capsize=5, ecolor=colors[name], color=colors[name], label=labels[name])
 	plt.axhline(y=data[data.observable.eq("magnetization")].tc_mean.values[0], linestyle="dashed", color=colors["magnetization"], label=labels["magnetization"])
 	plt.xticks(x, Ns)
 	plt.ylim(y_min, y_max)
@@ -197,9 +207,9 @@ def plot_tc_vs_lattice(results_dir, Js, Ls, observable_names, labels, colors, N=
 		title = J.capitalize()
 		subplot_tc_vs_lattice(results_dir, J, Ls, observable_names, labels, colors, N=N, fold=fold, seed=seed, xlabel=xlabel, ylabel=ylabel, title=title)
 	handles, labels = get_unique_legend_handles_labels(plt.gcf())
-	plt.figlegend(handles, labels, ncol=3, loc="upper center", fancybox=True, fontsize=8)
+	plt.figlegend(handles, labels, ncol=2, loc="upper center", fancybox=True, fontsize=8)
 	plt.tight_layout()
-	plt.subplots_adjust(top=0.9)
+	plt.subplots_adjust(top=0.85)
 	output_dir = os.path.join(results_dir, "plots")
 	os.makedirs(output_dir, exist_ok=True)
 	plt.savefig(os.path.join(output_dir, "tc_vs_L.png"))
@@ -300,6 +310,7 @@ if __name__ == "__main__":
 
 	print("Plotting error . . . ")
 	encoder_names = ["latent", "latent_equivariant", "latent_multiscale_4"]
+	observable_names = ["magnetization", "latent", "latent_equivariant", "latent_multiscale_4"]
 	labels = {"magnetization": "Magnetization", "latent": "Baseline-AE", "latent_equivariant": "GE-AE", "latent_multiscale_4": "GE-AE (multiscale)"}
 	colors = {"magnetization": "red", "latent": "green", "latent_equivariant": "blue", "latent_multiscale_4": "purple"}
 	for J in Js:
