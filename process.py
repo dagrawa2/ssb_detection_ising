@@ -320,24 +320,52 @@ def aggregate_cor(results_dir, J, observable_name, L, N=None, folds=None, seeds=
 		return mean, std
 
 
+def aggregate_slope_yintercept(results_dir, J, observable_name, L, N=None, folds=None, seeds=None, reduce_bias=False, prefix="tc"):
+	assert prefix in ["tc", "onsager"], "Keyword prefix must be either tc or onsager."
+	if L is not None:
+		return 0, 0
+	kwds = {"slope": "slope_mean", "slope_bias": "slope_mean_bias", "yintercept": "yintercept_mean", "yintercept_bias": "yintercept_mean_bias"}
+	if prefix == "onsager":
+		kwds = {key: prefix+"_"+value for (key, value) in kwds.items()}
+	key = SimpleNamespace(**kwds)
+	filename = "tc.npz" if prefix == "tc" else "cor.npz"
+	if observable_name == "magnetization":
+		with np.load(os.path.join(build_path(results_dir, J, observable_name, L, subdir="processed"), filename)) as D:
+			slope, yintercept = D[key.slope]+D[key.slope_bias]*int(reduce_bias), D[key.yintercept]+D[key.yintercept_bias]*int(reduce_bias)
+		return slope, yintercept
+	else:
+		slopes, yintercepts = [], []
+		for (fold, seed) in itertools.product(folds, seeds):
+			with np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), filename)) as D:
+				slopes.append(D[key.slope]+D[key.slope_bias]*int(reduce_bias))
+				yintercepts.append(D[key.yintercept]+D[key.yintercept_bias]*int(reduce_bias))
+		slope = np.array(slopes).mean()
+		yintercept = np.array(yintercepts).mean()
+		return slope, yintercept
+
+
 def gather(results_dir, Js, observable_names, Ls, Ns, folds, seeds, tc_reduce_bias=False, cor_reduce_bias=True, jackknife_std=True):
 	tc = 2/np.log(1+np.sqrt(2))
 	output_dir = 	os.path.join(results_dir, "processed")
 	os.makedirs(output_dir, exist_ok=True)
 	with open(os.path.join(output_dir, "gathered.csv"), "w") as fp:
-		fp.write("J,L,observable,N,tc_mean,tc_std,generation_time,preprocessing_time,training_time,cor_magnetization_mean,cor_magnetization_std,cor_magnetization_sign,cor_onsager_mean,cor_onsager_std\n")
+		fp.write("J,L,observable,N,tc_mean,tc_std,tc_slope,tc_yintercept,generation_time,preprocessing_time,training_time,cor_magnetization_mean,cor_magnetization_std,cor_magnetization_sign,cor_onsager_mean,cor_onsager_std,cor_onsager_slope,cor_onsager_yintercept\n")
 		for (J, L, observable_name, N) in itertools.product(Js, Ls, observable_names, Ns):
 			tc_mean, tc_std = aggregate_tc(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, reduce_bias=tc_reduce_bias, jackknife_std=jackknife_std)
+			tc_slope, tc_yintercept = aggregate_slope_yintercept(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, reduce_bias=tc_reduce_bias, prefix="tc")
 			tc_mean = 100*(tc_mean/tc - 1)
 			tc_std = 100*tc_std/tc
+			tc_slope = 100*tc_slope/tc
+			tc_yintercept = 100*(tc_yintercept/tc - 1)
 			generation_time = aggregate_time(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="generation", reduce=np.mean)/60
 			preprocessing_time = aggregate_time(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="preprocessing", reduce=np.mean)/60
 			training_time = aggregate_time(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="training", reduce=np.sum)/60
 			cor_magnetization_mean, cor_magnetization_std = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="magnetization", reduce_bias=cor_reduce_bias, jackknife_std=jackknife_std)
 			cor_onsager_mean, cor_onsager_std = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="onsager", reduce_bias=cor_reduce_bias, jackknife_std=jackknife_std)
+			cor_onsager_slope, cor_onsager_yintercept = aggregate_slope_yintercept(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, reduce_bias=cor_reduce_bias, prefix="onsager")
 			cor_magnetization_sign, _ = aggregate_cor(results_dir, J, observable_name, L, N=N, folds=folds, seeds=seeds, key="magnetization", func=np.sign, reduce_bias=cor_reduce_bias, jackknife_std=jackknife_std)
 			L_str = "{:d}".format(L) if L is not None else "inf"
-			fp.write("{},{},{},{:d},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f}\n".format(J, L, observable_name, N, tc_mean, tc_std, generation_time, preprocessing_time, training_time, cor_magnetization_mean, cor_magnetization_std, cor_magnetization_sign, cor_onsager_mean, cor_onsager_std))
+			fp.write("{},{},{},{:d},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f}\n".format(J, L, observable_name, N, tc_mean, tc_std, tc_slope, tc_yintercept, generation_time, preprocessing_time, training_time, 100*cor_magnetization_mean, 100*cor_magnetization_std, 100*cor_magnetization_sign, 100*cor_onsager_mean, 100*cor_onsager_std, 100*cor_onsager_slope, 100*cor_onsager_yintercept))
 
 
 ### process symmetry generators
@@ -426,7 +454,6 @@ if __name__ == "__main__":
 			print(encoder_name)
 			for (N, fold, seed) in itertools.product(Ns, folds, seeds):
 				calculate_time_extrapolates(results_dir, J, encoder_name, Ls, N=N, fold=fold, seed=seed)
-	"""
 
 	print("Calculating functional correlations . . . ")
 	for J in Js:
@@ -448,6 +475,7 @@ if __name__ == "__main__":
 			print(encoder_name)
 			for (N, fold, seed) in itertools.product(Ns, folds, seeds):
 				calculate_functional_cor_extrapolates(results_dir, J, encoder_name, Ls, N=N, fold=fold, seed=seed)
+	"""
 
 	print("Gathering results into CSV . . . ")
 	gather(results_dir, Js, ["magnetization"]+encoder_names, Ls+[None], Ns, folds, seeds, tc_reduce_bias=False, cor_reduce_bias=True, jackknife_std=True)

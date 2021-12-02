@@ -176,20 +176,16 @@ def plot_tc_extrapolate(results_dir, Js, Ns, encoder_names, labels, colors):
 
 ### plot error vs lattice size data
 
-def subplot_tc_vs_lattice(results_dir, J, Ls, observable_names, labels, colors, N=None, fold=None, seed=None, xlabel=True, ylabel=True, title=None):
-	tc_exact = 2/np.log(1+np.sqrt(2))
-	tc2err = lambda tc: 100*(tc/tc_exact-1)
+def subplot_tc_vs_lattice(results_dir, J, Ls, observable_names, labels, colors, N=None, xlabel=True, ylabel=True, title=None):
 	x = 1/np.array(Ls)
 	x_pnts = np.linspace(0, x.max(), 100, endpoint=True)
+	data = pd.read_csv(os.path.join(results_dir, "processed", "gathered.csv"))
+	data = data[(data.J==J) & (data.N==N)]
 	for name in observable_names:
-		y = []
-		for L in Ls:
-			with np.load(os.path.join(build_path(results_dir, J, name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as fp:
-				y.append( fp["mean"] )
-		with np.load(os.path.join(build_path(results_dir, J, name, None, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")) as fp:
-			slope, intercept = fp["slope_mean"], fp["yintercept_mean"]
+		y = data[(data.observable==name) & (data.L!="None")].tc_mean.values
+		slope = float( data[(data.observable==name) & (data.L=="None")].tc_slope.values )
+		intercept = float( data[(data.observable==name) & (data.L=="None")].tc_yintercept.values )
 		yhat = slope*x_pnts + intercept
-		y, yhat = tc2err(y), tc2err(yhat)
 		plt.scatter(x, y, alpha=0.7, color=colors[name], label=labels[name])
 		plt.plot(x_pnts, yhat, alpha=0.7, color=colors[name])
 	if xlabel:
@@ -200,7 +196,7 @@ def subplot_tc_vs_lattice(results_dir, J, Ls, observable_names, labels, colors, 
 		plt.title(title, fontsize=8)
 
 
-def plot_tc_vs_lattice(results_dir, Js, Ls, observable_names, labels, colors, N=None, fold=None, seed=None):
+def plot_tc_vs_lattice(results_dir, Js, Ls, observable_names, labels, colors, N=None):
 	plt.figure()
 	nrows, ncols = 1, len(Js)
 	for (index, J) in enumerate(Js):
@@ -208,7 +204,7 @@ def plot_tc_vs_lattice(results_dir, Js, Ls, observable_names, labels, colors, N=
 		xlabel = index//ncols == nrows-1
 		ylabel = index%ncols == 0
 		title = J.capitalize()
-		subplot_tc_vs_lattice(results_dir, J, Ls, observable_names, labels, colors, N=N, fold=fold, seed=seed, xlabel=xlabel, ylabel=ylabel, title=title)
+		subplot_tc_vs_lattice(results_dir, J, Ls, observable_names, labels, colors, N=N, xlabel=xlabel, ylabel=ylabel, title=title)
 	handles, labels = get_unique_legend_handles_labels(plt.gcf())
 	plt.figlegend(handles, labels, ncol=2, loc="upper center", fancybox=True, fontsize=8)
 	plt.tight_layout()
@@ -275,8 +271,6 @@ def plot_time(results_dir, Js, Ls, N, encoder_names, labels, colors):
 def subplot_cor(results_dir, J, Ls, Ns, encoder_name, colors, xlabel=True, ylabel=True, title=None):
 	data = pd.read_csv(os.path.join(results_dir, "processed", "gathered.csv"))
 	data = data[(data.J==J) & (data.observable==encoder_name) & (data.L!="None")]
-	data.cor_magnetization_mean = 100*data.cor_magnetization_mean
-	data.cor_magnetization_std = 100*data.cor_magnetization_std
 	y_min, y_max = y_minmax(data.cor_magnetization_mean.values, data.cor_magnetization_std.values)
 	x = np.arange(len(Ls))
 	width, shifts = bar_width_shifts(len(Ns))
@@ -287,7 +281,7 @@ def subplot_cor(results_dir, J, Ls, Ns, encoder_name, colors, xlabel=True, ylabe
 	if xlabel:
 		plt.xlabel(r"Lattice size ($L$)", fontsize=8)
 	if ylabel:
-		plt.ylabel("Distance (%)", fontsize=8)
+		plt.ylabel("Error $\nu$ (%)", fontsize=8)
 	if title is not None:
 		plt.title(title, fontsize=8)
 
@@ -313,21 +307,17 @@ def plot_cor(results_dir, J, Ls, Ns, encoder_name, colors):
 
 ### plot correlation to onsager
 
-def subplot_onsager(results_dir, J, Ls, observable_names, labels, colors, N=None, fold=None, seed=None, xlabel=True, ylabel=True, title=None):
+def subplot_onsager(results_dir, J, Ls, observable_names, labels, colors, N=None, xlabel=True, ylabel=True, title=None):
 	x = 1/np.array(Ls)
 	x_pnts = np.linspace(0, x.max(), 100, endpoint=True)
+	data = pd.read_csv(os.path.join(results_dir, "processed", "gathered.csv"))
+	data = data[(data.J==J) & (data.N==N)]
 	for name in observable_names:
-		y = []
-		for L in Ls:
-			with np.load(os.path.join(build_path(results_dir, J, name, L, N=N, fold=fold, seed=seed, subdir="processed"), "cor.npz")) as fp:
-				y.append( fp["onsager_mean"]+fp["onsager_mean_bias"] )
-		y = np.array(y)
-		with np.load(os.path.join(build_path(results_dir, J, name, None, N=N, fold=fold, seed=seed, subdir="processed"), "cor.npz")) as fp:
-			slope, intercept = fp["onsager_slope_mean"]+fp["onsager_slope_mean_bias"], fp["onsager_yintercept_mean"]+fp["onsager_yintercept_mean_bias"]
-			r2 = fp["onsager_r2_mean"]+fp["onsager_r2_mean_bias"]
+		y = data[(data.observable==name) & (data.L!="None")].cor_onsager_mean.values
+		slope = float( data[(data.observable==name) & (data.L=="None")].cor_onsager_slope.values )
+		intercept = float( data[(data.observable==name) & (data.L=="None")].cor_onsager_yintercept.values )
 		yhat = slope*x_pnts + intercept
-		y, yhat = 100*y, 100*yhat
-		plt.scatter(x, y, alpha=0.7, color=colors[name], label=labels[name]+r"($r^2="+"{:.2f}".format(r2)+r"$)")
+		plt.scatter(x, y, alpha=0.7, color=colors[name], label=labels[name])
 		plt.plot(x_pnts, yhat, alpha=0.7, color=colors[name])
 	if xlabel:
 		plt.xlabel(r"Inverse lattice size ($L^{-1}$)", fontsize=8)
@@ -337,7 +327,7 @@ def subplot_onsager(results_dir, J, Ls, observable_names, labels, colors, N=None
 		plt.title(title, fontsize=8)
 
 
-def plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=None, fold=None, seed=None):
+def plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=None):
 	plt.figure()
 	nrows, ncols = 1, len(Js)
 	for (index, J) in enumerate(Js):
@@ -345,7 +335,7 @@ def plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=None, 
 		xlabel = index//ncols == nrows-1
 		ylabel = index%ncols == 0
 		title = J.capitalize()
-		subplot_onsager(results_dir, J, Ls, observable_names, labels, colors, N=N, fold=fold, seed=seed, xlabel=xlabel, ylabel=ylabel, title=title)
+		subplot_onsager(results_dir, J, Ls, observable_names, labels, colors, N=N, xlabel=xlabel, ylabel=ylabel, title=title)
 	handles, labels = get_unique_legend_handles_labels(plt.gcf())
 	plt.figlegend(handles, labels, ncol=2, loc="upper center", fancybox=True, fontsize=8)
 	plt.tight_layout()
@@ -405,13 +395,13 @@ if __name__ == "__main__":
 	for J in Js:
 		plot_tc(results_dir, J, Ls, Ns, encoder_names, labels, colors, grid_dims=(2, 2))
 	plot_tc_extrapolate(results_dir, Js, Ns, encoder_names, labels, colors)
-	plot_tc_vs_lattice(results_dir, Js, Ls, observable_names, labels, colors, N=256, fold=0, seed=0)
+	plot_tc_vs_lattice(results_dir, Js, Ls, observable_names, labels, colors, N=256)
 
 	print("Plotting time . . . ")
 	plot_time(results_dir, Js, Ls, 256, encoder_names, labels, colors)
 
 	print("Plotting correlations . . . ")
-	plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=256, fold=0, seed=0)
+	plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=256)
 	colors = {str(N): color for (N, color) in zip(Ns, ["red", "orange", "magenta", "purple", "blue", "green"])}
 	plot_cor(results_dir, Js, Ls, Ns, "latent", colors)
 
