@@ -220,22 +220,42 @@ def calculate_time_extrapolates(results_dir, J, observable_name, Ls, N=None, fol
 ### calculate functional correlations
 
 def calculate_functional_cors(results_dir, J, observable_name, L, N=None, fold=None, seed=None, L_test=None):
-	output_dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test, subdir="processed")
-	os.makedirs(output_dir, exist_ok=True)
-	if L is None:
-		np.savez(os.path.join(output_dir, "cor.npz"), magnetization=0, onsager_mean=0, onsager_std=0, onsager_mean_bias=0, onsager_std_bias=0)
-		return
 	dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test)
 	measurements = np.load(os.path.join(dir, "measurements.npz"))
 	temperatures = measurements["temperatures"]
 	measurements = measurements["measurements"].T
 	magnetization = np.load(os.path.join(build_path(results_dir, J, "magnetization", L), "measurements.npz"))["measurements"].T
 	cor = np.sum(measurements*magnetization)/np.sqrt(np.sum(measurements**2)*np.sum(magnetization**2))
-	onsager = np.where(temperatures<2/np.log(1+np.sqrt(2)), np.clip(1-1/np.sinh(2/temperatures), 0, None)**(1/8), np.zeros_like(temperatures))
+	cor = np.maximum(0, 1-cor**2)
+	onsager = np.where(temperatures<2/np.log(1+np.sqrt(2)), np.clip(1-1/np.sinh(2/temperatures)**4, 0, None)**(1/8), np.zeros_like(temperatures))
 	samples = jackknife.calculate_samples(np.abs(measurements))
 	samples = samples.dot(onsager)/np.sqrt(np.sum(samples**2, 1)*np.sum(onsager**2))
+	samples = np.maximum(0, 1-samples**2)
 	mean, std, mean_bias, std_bias = jackknife.calculate_mean_std(samples, reduce_bias=False, return_bias=True)
-	np.savez(os.path.join(output_dir, "cor.npz"), magnetization=cor, onsager_mean=mean, onsager_std=std, onsager_mean_bias=mean_bias, onsager_std_bias=std_bias)
+	output_dir = build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, L_test=L_test, subdir="processed")
+	os.makedirs(output_dir, exist_ok=True)
+	np.savez(os.path.join(output_dir, "cor.npz"), magnetization=cor, onsager_mean=mean, onsager_std=std, onsager_mean_bias=mean_bias, onsager_std_bias=std_bias, onsager_samples=samples)
+
+
+def calculate_functional_cor_extrapolates(results_dir, J, observable_name, Ls, N=None, fold=None, seed=None, jitter=1e-6):
+	load_tc = lambda L: np.load(os.path.join(build_path(results_dir, J, observable_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "cor.npz"))
+	x = 1/np.array(Ls)
+	y_samples = np.stack([load_tc(L)["onsager_samples"] for L in Ls], 0)
+	weights = 1/(np.array([float(load_tc(L)["onsager_std"]+load_tc(L)["onsager_std_bias"]) for L in Ls]) + jitter)
+	fit_samples, r2_samples = lstsq_samples(x, y_samples, weights=weights)
+	samples = np.concatenate([fit_samples, r2_samples[None,:]], 0).T
+	mean, std, mean_bias, std_bias = jackknife.calculate_mean_std(samples, reduce_bias=False, return_bias=True)
+	stats = ["mean", "std", "mean_bias", "std_bias"]
+	values = [mean, std, mean_bias, std_bias]
+	kwds = ["yintercept", "slope", "r2"]
+	output_dict = {stat: value[0] for (stat, value) in zip(stats, values)}
+	for ((i, kwd), (stat, value)) in itertools.product(enumerate(kwds), zip(stats, values)):
+		output_dict["{}_{}".format(kwd, stat)] = value[i]
+	output_dict = {"onsager_"+key: value for (key, value) in output_dict.items()}
+	output_dict["magnetization"] = 0
+	output_dir = build_path(results_dir, J, observable_name, None, N, fold, seed, subdir="processed")
+	os.makedirs(output_dir, exist_ok=True)
+	np.savez(os.path.join(output_dir, "cor.npz"), **output_dict)
 
 
 ### gather critical temperatures, times, and correlations into CSV
@@ -406,18 +426,28 @@ if __name__ == "__main__":
 			print(encoder_name)
 			for (N, fold, seed) in itertools.product(Ns, folds, seeds):
 				calculate_time_extrapolates(results_dir, J, encoder_name, Ls, N=N, fold=fold, seed=seed)
+	"""
 
 	print("Calculating functional correlations . . . ")
 	for J in Js:
 		print("J:", J)
 		print("magnetization")
-		for L in Ls+[None]:
+		for L in Ls:
 			calculate_functional_cors(results_dir, J, "magnetization", L)
 		for encoder_name in encoder_names:
 			print(encoder_name)
-			for (L, N, fold, seed) in itertools.product(Ls+[None], Ns, folds, seeds):
+			for (L, N, fold, seed) in itertools.product(Ls, Ns, folds, seeds):
 				calculate_functional_cors(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed)
-	"""
+
+	print("Calculating functional correlation extrapolates . . . ")
+	for J in Js:
+		print("J:", J)
+		print("magnetization")
+		calculate_functional_cor_extrapolates(results_dir, J, "magnetization", Ls)
+		for encoder_name in encoder_names:
+			print(encoder_name)
+			for (N, fold, seed) in itertools.product(Ns, folds, seeds):
+				calculate_functional_cor_extrapolates(results_dir, J, encoder_name, Ls, N=N, fold=fold, seed=seed)
 
 	print("Gathering results into CSV . . . ")
 	gather(results_dir, Js, ["magnetization"]+encoder_names, Ls+[None], Ns, folds, seeds, tc_reduce_bias=False, cor_reduce_bias=True, jackknife_std=True)

@@ -33,9 +33,12 @@ def subplot_stat(results_dir, J, observable_name, L, N=None, fold=None, seed=Non
 		if title is not None:
 			plt.title(title, fontsize=8)
 	if what == "order":
+		onsager = np.where(stats["temperatures"]<2/np.log(1+np.sqrt(2)), np.clip(1-1/np.sinh(2/stats["temperatures"])**4, 0, None)**(1/8), np.zeros_like(stats["temperatures"]))
+		onsager = stats["order_means"][0]/onsager[0]*onsager
 		plt.plot(stats["temperatures"], stats["order_means"], color="black")
 		plt.plot(stats["temperatures"], stats["order_means"]-stats["order_stds"], color="black", linestyle="dashed")
 		plt.plot(stats["temperatures"], stats["order_means"]+stats["order_stds"], color="black", linestyle="dashed")
+		plt.plot(stats["temperatures"], onsager, linestyle="dashed", color="blue")
 		plt.axvline(x=tc_exact, linestyle="dashed", color=colors["tc"])
 		if xlabel:
 			plt.xlabel(r"Temperature ($T$)", fontsize=8)
@@ -267,6 +270,92 @@ def plot_time(results_dir, Js, Ls, N, encoder_names, labels, colors):
 	plt.close()
 
 
+### plot correlation to magnetization
+
+def subplot_cor(results_dir, J, Ls, Ns, encoder_name, colors, xlabel=True, ylabel=True, title=None):
+	data = pd.read_csv(os.path.join(results_dir, "processed", "gathered.csv"))
+	data = data[(data.J==J) & (data.observable==encoder_name) & (data.L!="None")]
+	data.cor_magnetization_mean = 100*data.cor_magnetization_mean
+	data.cor_magnetization_std = 100*data.cor_magnetization_std
+	y_min, y_max = y_minmax(data.cor_magnetization_mean.values, data.cor_magnetization_std.values)
+	x = np.arange(len(Ls))
+	width, shifts = bar_width_shifts(len(Ns))
+	for (N, shift) in zip(Ns, shifts):
+		plt.bar(x+shift, data[data.N.eq(N)].cor_magnetization_mean.values, width, yerr=bar_yerrs(data[data.N.eq(N)].cor_magnetization_mean.values, data[data.N.eq(N)].cor_magnetization_std.values), capsize=5, ecolor=colors[str(N)], color=colors[str(N)], label=str(int(N)))
+	plt.xticks(x, Ls)
+	plt.ylim(y_min, y_max)
+	if xlabel:
+		plt.xlabel(r"Lattice size ($L$)", fontsize=8)
+	if ylabel:
+		plt.ylabel("Distance (%)", fontsize=8)
+	if title is not None:
+		plt.title(title, fontsize=8)
+
+
+def plot_cor(results_dir, J, Ls, Ns, encoder_name, colors):
+	plt.figure()
+	nrows, ncols = 1, len(Js)
+	for (index, J) in enumerate(Js):
+		plt.subplot(nrows, ncols, index+1)
+		xlabel = index//ncols == nrows-1
+		ylabel = index%ncols == 0
+		title = J.capitalize()
+		subplot_cor(results_dir, J, Ls, Ns, encoder_name, colors, xlabel=xlabel, ylabel=ylabel, title=title)
+	handles, labels = get_unique_legend_handles_labels(plt.gcf())
+	plt.figlegend(handles, labels, ncol=3, loc="upper center", fancybox=True, fontsize=8, title=r"Samples per temperature ($N$)")
+	plt.tight_layout()
+	plt.subplots_adjust(top=0.78)
+	output_dir = os.path.join(results_dir, "plots")
+	os.makedirs(output_dir, exist_ok=True)
+	plt.savefig(os.path.join(output_dir, "cor_magnetization.png"))
+	plt.close()
+
+
+### plot correlation to onsager
+
+def subplot_onsager(results_dir, J, Ls, observable_names, labels, colors, N=None, fold=None, seed=None, xlabel=True, ylabel=True, title=None):
+	x = 1/np.array(Ls)
+	x_pnts = np.linspace(0, x.max(), 100, endpoint=True)
+	for name in observable_names:
+		y = []
+		for L in Ls:
+			with np.load(os.path.join(build_path(results_dir, J, name, L, N=N, fold=fold, seed=seed, subdir="processed"), "cor.npz")) as fp:
+				y.append( fp["onsager_mean"]+fp["onsager_mean_bias"] )
+		y = np.array(y)
+		with np.load(os.path.join(build_path(results_dir, J, name, None, N=N, fold=fold, seed=seed, subdir="processed"), "cor.npz")) as fp:
+			slope, intercept = fp["onsager_slope_mean"]+fp["onsager_slope_mean_bias"], fp["onsager_yintercept_mean"]+fp["onsager_yintercept_mean_bias"]
+			r2 = fp["onsager_r2_mean"]+fp["onsager_r2_mean_bias"]
+		yhat = slope*x_pnts + intercept
+		y, yhat = 100*y, 100*yhat
+		plt.scatter(x, y, alpha=0.7, color=colors[name], label=labels[name]+r"($r^2="+"{:.2f}".format(r2)+r"$)")
+		plt.plot(x_pnts, yhat, alpha=0.7, color=colors[name])
+	if xlabel:
+		plt.xlabel(r"Inverse lattice size ($L^{-1}$)", fontsize=8)
+	if ylabel:
+		plt.ylabel("Distance (%)", fontsize=8)
+	if title is not None:
+		plt.title(title, fontsize=8)
+
+
+def plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=None, fold=None, seed=None):
+	plt.figure()
+	nrows, ncols = 1, len(Js)
+	for (index, J) in enumerate(Js):
+		plt.subplot(nrows, ncols, index+1)
+		xlabel = index//ncols == nrows-1
+		ylabel = index%ncols == 0
+		title = J.capitalize()
+		subplot_onsager(results_dir, J, Ls, observable_names, labels, colors, N=N, fold=fold, seed=seed, xlabel=xlabel, ylabel=ylabel, title=title)
+	handles, labels = get_unique_legend_handles_labels(plt.gcf())
+	plt.figlegend(handles, labels, ncol=2, loc="upper center", fancybox=True, fontsize=8)
+	plt.tight_layout()
+	plt.subplots_adjust(top=0.85)
+	output_dir = os.path.join(results_dir, "plots")
+	os.makedirs(output_dir, exist_ok=True)
+	plt.savefig(os.path.join(output_dir, "cor_onsager.png"))
+	plt.close()
+
+
 ### tabulate symmetry generators
 
 def tabulate_generators(results_dir, Js, encoder_name):
@@ -320,6 +409,11 @@ if __name__ == "__main__":
 
 	print("Plotting time . . . ")
 	plot_time(results_dir, Js, Ls, 256, encoder_names, labels, colors)
+
+	print("Plotting correlations . . . ")
+	plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=256, fold=0, seed=0)
+	colors = {str(N): color for (N, color) in zip(Ns, ["red", "orange", "magenta", "purple", "blue", "green"])}
+	plot_cor(results_dir, Js, Ls, Ns, "latent", colors)
 
 	print("Tabulating generators . . . ")
 	tabulate_generators(results_dir, Js, "latent_equivariant")
