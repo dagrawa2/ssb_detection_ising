@@ -375,7 +375,7 @@ def tabulate_generators(results_dir, Js, encoder_name):
 
 
 if __name__ == "__main__":
-	results_dir = "results4"
+	results_dir = "results"
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
 	Ns = [8, 16, 32, 64, 128, 256]

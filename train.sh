@@ -37,7 +37,7 @@ do
 					--val_size=0.5 \
 					--val_batch_size=2048 \
 					--val_interval=1 \
-					--results_dir=results4/$J/latent/L$L/N${Ns[i]}/fold$fold/seed$seed \
+					--results_dir=results/$J/latent/L$L/N${Ns[i]}/fold$fold/seed$seed \
 					--device=cpu
 				#
 				# GE-autoencoder
@@ -54,7 +54,7 @@ do
 					--val_size=0.5 \
 					--val_batch_size=2048 \
 					--val_interval=1 \
-					--results_dir=results4/$J/latent_equivariant/L$L/N${Ns[i]}/fold$fold/seed$seed \
+					--results_dir=results/$J/latent_equivariant/L$L/N${Ns[i]}/fold$fold/seed$seed \
 					--device=cpu \
 					--symmetric \
 					--equivariance_reg=1.0 \
@@ -89,7 +89,7 @@ do
 					--val_size=0.5 \
 					--val_batch_size=2048 \
 					--val_interval=1 \
-					--results_dir=results4/$J/latent_multiscale_${nscales[j]}/L16/N${Ns[i]}/fold$fold/seed$seed \
+					--results_dir=results/$J/latent_multiscale_${nscales[j]}/L16/N${Ns[i]}/fold$fold/seed$seed \
 					--device=cpu \
 					--symmetric \
 					--equivariance_reg=1.0 \
@@ -122,8 +122,8 @@ do
 					--val_size=0.5 \
 					--val_batch_size=2048 \
 					--val_interval=1 \
-					--load_model=results4/$J/latent_multiscale_4/L16/N${Ns[i]}/fold$fold/seed$seed \
-					--results_dir=results4/$J/latent_multiscale_4/L$L/N${Ns[i]}/fold$fold/seed$seed \
+					--load_model=results/$J/latent_multiscale_4/L16/N${Ns[i]}/fold$fold/seed$seed \
+					--results_dir=results/$J/latent_multiscale_4/L$L/N${Ns[i]}/fold$fold/seed$seed \
 					--device=cpu \
 					--symmetric \
 					--equivariance_reg=1.0 \

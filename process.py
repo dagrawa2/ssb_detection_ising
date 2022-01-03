@@ -388,7 +388,7 @@ def calculate_generators(results_dir, Js, encoder_names, Ls, Ns, folds, seeds):
 
 
 if __name__ == "__main__":
-	results_dir = "results4"
+	results_dir = "results"
 	Js = ["ferromagnetic", "antiferromagnetic"]
 	Ls = [16, 32, 64, 128]
 	Ns = [8, 16, 32, 64, 128, 256]
@@ -401,7 +401,6 @@ if __name__ == "__main__":
 	folds = list(range(8))
 	seeds = list(range(3))
 
-	"""
 	print("Gathering magnetizations . . . ")
 	for (J, L) in itertools.product(Js, Ls):
 		gather_magnetizations("data", results_dir, J, L, N_test=N_test)
@@ -419,8 +418,6 @@ if __name__ == "__main__":
 		for encoder_name in encoder_names:
 			print(encoder_name)
 			for (L, N, fold, seed) in itertools.product(Ls, Ns, folds, seeds):
-#				if os.path.exists(os.path.join(build_path(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed, subdir="processed"), "tc.npz")):
-#					continue
 				calculate_critical_temperatures(results_dir, J, encoder_name, L, N=N, fold=fold, seed=seed, optimize_std=True, optimize_reduce_bias=True)
 
 	print("Calculating critical temperature extrapolates . . . ")
@@ -475,7 +472,6 @@ if __name__ == "__main__":
 			print(encoder_name)
 			for (N, fold, seed) in itertools.product(Ns, folds, seeds):
 				calculate_functional_cor_extrapolates(results_dir, J, encoder_name, Ls, N=N, fold=fold, seed=seed)
-	"""
 
 	print("Gathering results into CSV . . . ")
 	gather(results_dir, Js, ["magnetization"]+encoder_names, Ls+[None], Ns, folds, seeds, tc_reduce_bias=False, cor_reduce_bias=True, jackknife_std=True)
