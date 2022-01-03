@@ -1,4 +1,6 @@
+import os
 import time
+import itertools
 import numpy as np
 
 from phasefinder.datasets import Ising
@@ -6,26 +8,28 @@ from phasefinder.datasets import Ising
 
 time_start = time.time()
 
+Js = [(1, "ferromagnetic"), (-1, "antiferromagnetic")]
 Ls = [16, 32, 64, 128]
 Ts = [1.04+0.04*i for i in range(25)] \
 	+ [2.01+0.01*i for i in range(50)] \
 	+ [2.54+0.04*i for i in range(25)]
 
-for L in Ls:
-	for T in Ts:
-		I = Ising()
-		I.generate(d=2, 
-			L=L, 
-			J=-1, 
-			T=T, 
-			mc_steps=50000, 
-			ieq_steps=10000, 
-			meas_steps=10, 
-			seed=107, 
-			output_dir="data/antiferromagnetic/L{:d}/T{:.2f}".format(L, T), 
-			encode=True)
+for ((J, J_long), L, T) in itertools.product(Js, Ls, Ts):
+	os.makedirs("data/{}/L{:d}".format(J_long, L), exist_ok=True)
 
-		I.reduce_checkerboard("data/antiferromagnetic/L{:d}/T{:.2f}".format(L, T), decode=True)
+	I = Ising()
+	I.generate(d=2, 
+		L=L, 
+		J=J, 
+		T=T, 
+		mc_steps=50000, 
+		ieq_steps=10000, 
+		meas_steps=10, 
+		seed=107, 
+		output_dir="data/{}/L{:d}/T{:.2f}".format(J_long, L, T), 
+		encode=True)
+
+	I.reduce_checkerboard("data/{}/L{:d}/T{:.2f}".format(J_long, L, T), decode=True)
 
 
 print("Done!")
