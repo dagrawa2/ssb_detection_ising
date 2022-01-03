@@ -1,6 +1,3 @@
 __pycache__
-archive*
 data
-results*
-out.txt
-test.py
+results
