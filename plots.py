@@ -46,7 +46,7 @@ def subplot_stat(results_dir, J, observable_name, L, N=None, fold=None, seed=Non
         plt.plot(stats["temperatures"], stats["order_means"], color="black")
         plt.plot(stats["temperatures"], stats["order_means"]-stats["order_stds"], color="black", linestyle="dashed")
         plt.plot(stats["temperatures"], stats["order_means"]+stats["order_stds"], color="black", linestyle="dashed")
-        plt.plot(stats["temperatures"], onsager, linestyle="dashed", color="blue")
+        plt.plot(stats["temperatures"], onsager, linestyle="dashed", color=blue)
         plt.axvline(x=tc_exact, linestyle="dashed", color=colors["tc"])
         plt.ylim(-0.05,1.05)
         if xlabel:
@@ -212,7 +212,7 @@ def subplot_tc_vs_lattice(results_dir, J, Ls, observable_names, labels, colors, 
         slope = float( data[(data.observable==name) & (data.L=="None")].tc_slope.values )
         intercept = float( data[(data.observable==name) & (data.L=="None")].tc_yintercept.values )
         yhat = slope*x_pnts + intercept
-        plt.scatter(x, y, alpha=0.7, s=8,color=colors[name], label=labels[name])
+        plt.scatter(x, y, alpha=0.7, s=12, lw=0.25,color=colors[name], label=labels[name])
         plt.plot(x_pnts, yhat, alpha=0.7, color=colors[name])
         plt.xlim(0,0.069)
         plt.ylim(-2.6,17.4)
@@ -355,7 +355,7 @@ def subplot_onsager(results_dir, J, Ls, observable_names, labels, colors, N=None
         slope = float( data[(data.observable==name) & (data.L=="None")].cor_onsager_slope.values )
         intercept = float( data[(data.observable==name) & (data.L=="None")].cor_onsager_yintercept.values )
         yhat = slope*x_pnts + intercept
-        plt.scatter(x, y, alpha=0.7, s=8, color=colors[name], label=labels[name])
+        plt.scatter(x, y, alpha=0.7, s=12, linewidth=0.25, color=colors[name], label=labels[name])
         plt.plot(x_pnts, yhat, alpha=0.7, color=colors[name])
         plt.ylim(0,24)
         plt.xlim(0,0.069)
@@ -423,10 +423,16 @@ if __name__ == "__main__":
     Ls = [16, 32, 64, 128]
     Ns = [8, 16, 32, 64, 128, 256]
 
+    # old colors
+    # red,orange,yellow,purple,blue,green = "red", "orange", "magenta", "purple", "blue", "green"
+
+    # new colors
+    red,orange,yellow,purple,blue,green = "#e41a1c", "#ff7f00", "#fee08b", "#984ea3", "#377eb8", "#4daf4a"
+
     print("Plotting statistics . . . ")
     observable_names = ["magnetization", "latent", "latent_equivariant"]
     titles = {"magnetization": "Magnetization", "latent": "Baseline-AE", "latent_equivariant": "GE-AE"}
-    colors = {"tc": "red", "fit": "blue"}
+    colors = {"tc": red, "fit": blue}
     for what in ["distribution", "order", "binder"]:
         plot_stat(results_dir, Js, observable_names, 128, N=256, fold=0, seed=0, colors=colors, titles=titles, what=what)
 
@@ -434,7 +440,7 @@ if __name__ == "__main__":
     encoder_names = ["latent", "latent_equivariant", "latent_multiscale_4"]
     observable_names = ["magnetization", "latent", "latent_equivariant", "latent_multiscale_4"]
     labels = {"magnetization": "Magnetization", "latent": "Baseline-AE", "latent_equivariant": "GE-AE", "latent_multiscale_4": "GE-AE (multiscale)"}
-    colors = {"magnetization": "red", "latent": "green", "latent_equivariant": "blue", "latent_multiscale_4": "purple"}
+    colors = {"magnetization": red, "latent": green, "latent_equivariant": blue, "latent_multiscale_4": purple}
     for J in Js:
         plot_tc(results_dir, J, Ls, Ns, encoder_names, labels, colors, grid_dims=(2, 2))
     plot_tc_extrapolate(results_dir, Js, Ns, encoder_names, labels, colors)
@@ -445,7 +451,7 @@ if __name__ == "__main__":
 
     print("Plotting correlations . . . ")
     plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=256)
-    colors = {str(N): color for (N, color) in zip(Ns, ["red", "orange", "magenta", "purple", "blue", "green"])}
+    colors = {str(N): color for (N, color) in zip(Ns, [red, orange, yellow, purple, blue, green])}
     plot_cor(results_dir, Js, Ls, Ns, "latent", colors)
 
     print("Tabulating generators . . . ")
