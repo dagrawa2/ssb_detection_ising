@@ -1,7 +1,9 @@
+[![Paper](https://img.shields.io/badge/paper-arXiv%3A2202.06319-B31B1B.svg)](https://arxiv.org/abs/2202.06319)
 [![DOI](https://zenodo.org/badge/444186389.svg)](https://zenodo.org/badge/latestdoi/444186389)
 
 # A Group-Equivariant Autoencoder for Identifying Spontaneously Broken Symmetries in the Ising Model
-Devanshu Agrawal, Adrian Del Maestro, Steven Johnston, and James Ostrowski.
+Devanshu Agrawal, Adrian Del Maestro, Steven Johnston, and James Ostrowski
+[arXiv:2202.06319](https://arxiv.org/abs/2202.06319)
 
 ### Abstract
 
