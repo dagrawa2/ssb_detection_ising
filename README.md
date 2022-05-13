@@ -42,7 +42,10 @@ Then to begin the simulation, run the following inside this current repository (
 
     python generate_data.py
 
-This will populate the `data` subdirectory.
+This will populate the `data` subdirectory. 
+To aggregate the generated data across temperatures, run the following:
+
+    python aggregate_data.py
 
 
 # Running models and reproducing results
