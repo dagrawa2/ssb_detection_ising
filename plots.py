@@ -162,32 +162,6 @@ def subplot_tc(results_dir, J, L, Ns, encoder_names, labels, colors, xlabel=True
         plt.title(title, fontsize=8)
 
 
-def subplot_ad(results_dir,T,encoder_names, labels, colors, xlabel=True, ylabel=True, title=None):
-    data = pd.read_csv(os.path.join(results_dir, "processed", "anomaly_detection_FM.csv"))
-    
-    d = data[data.temperature == T]
-
-    x = [1,2,3]
-    width, shifts = bar_width_shifts(len(encoder_names))
-
-    for (name, shift) in zip(encoder_names, shifts):
-        y = d[f'{name}_mean'].values[1:]
-        Δy = d[f'{name}_std'].values[1:]
-        plt.bar(x+shift, y, width, yerr=bar_yerrs(y,Δy), capsize=2,ecolor=colors[name], color=colors[name], label=labels[name])
-
-    ax = plt.gca()
-    ax.set_xticks(x)
-    ax.set_xticklabels([r'$10^{-3}$',r'$10^{-2}$',r'$10^{-1}$'])
-    ax.set_ylim(0,13.5)
-    plt.xlabel(r'Sym. Breaking Field $(h)$')
-    if ylabel:
-        plt.ylabel(r'Confindence Score  $(\xi)$')
-    else:
-        ax.set_yticklabels([])
-
-    if title is not None:
-        plt.title(title, fontsize=8)
-
 def plot_tc(results_dir, J, Ls, Ns, encoder_names, labels, colors, grid_dims=None):
     plt.figure(figsize=(figsize[0],figsize[0]))
     nrows, ncols = grid_dims
@@ -225,7 +199,35 @@ def plot_tc_extrapolate(results_dir, Js, Ns, encoder_names, labels, colors):
     plt.savefig(os.path.join(output_dir, "tc_extrapolate.pdf"))
     plt.close()
 
+
 ### plot anomaly detection for ferromagnetic
+
+def subplot_ad(results_dir,T,encoder_names, labels, colors, xlabel=True, ylabel=True, title=None):
+    data = pd.read_csv(os.path.join(results_dir, "processed", "anomaly_detection_FM.csv"))
+    
+    d = data[data.temperature == T]
+
+    x = [1,2,3]
+    width, shifts = bar_width_shifts(len(encoder_names))
+
+    for (name, shift) in zip(encoder_names, shifts):
+        y = d[f'{name}_mean'].values[1:]
+        Δy = d[f'{name}_std'].values[1:]
+        plt.bar(x+shift, y, width, yerr=bar_yerrs(y,Δy), capsize=2,ecolor=colors[name], color=colors[name], label=labels[name])
+
+    ax = plt.gca()
+    ax.set_xticks(x)
+    ax.set_xticklabels([r'$10^{-3}$',r'$10^{-2}$',r'$10^{-1}$'])
+    ax.set_ylim(0,13.5)
+    plt.xlabel(r'Sym. breaking field $(h)$')
+    if ylabel:
+        plt.ylabel(r'Confidence score  $(\xi)$')
+    else:
+        ax.set_yticklabels([])
+
+    if title is not None:
+        plt.title(title, fontsize=8)
+
 
 def plot_ad(results_dir, Ts, encoder_names, labels, colors):
     plt.figure(figsize=(figsize[0],figsize[0]))
@@ -252,6 +254,7 @@ def plot_ad(results_dir, Ts, encoder_names, labels, colors):
     output_dir = os.path.join(results_dir, "plots")
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "anomaly_detection.pdf"))
+    plt.close()
 
 
 ### plot error vs lattice size data

@@ -88,7 +88,7 @@ print("Evaluating encoders . . . ")
 
 means_0 = np.zeros((8, 3))
 
-file = open("results/anomaly_detection.csv", "w")
+file = open("results/processed/anomaly_detection_FM.csv", "w")
 file.write("temperature,field_strength,baseline_mean,baseline_std,ge_mean,ge_std\n")
 
 for (T, B) in itertools.product(Ts, Bs):
