@@ -162,6 +162,32 @@ def subplot_tc(results_dir, J, L, Ns, encoder_names, labels, colors, xlabel=True
         plt.title(title, fontsize=8)
 
 
+def subplot_ad(results_dir,T,encoder_names, labels, colors, xlabel=True, ylabel=True, title=None):
+    data = pd.read_csv(os.path.join(results_dir, "processed", "anomaly_detection_FM.csv"))
+    
+    d = data[data.temperature == T]
+
+    x = [1,2,3]
+    width, shifts = bar_width_shifts(len(encoder_names))
+
+    for (name, shift) in zip(encoder_names, shifts):
+        y = d[f'{name}_mean'].values[1:]
+        Δy = d[f'{name}_std'].values[1:]
+        plt.bar(x+shift, y, width, yerr=bar_yerrs(y,Δy), capsize=2,ecolor=colors[name], color=colors[name], label=labels[name])
+
+    ax = plt.gca()
+    ax.set_xticks(x)
+    ax.set_xticklabels([r'$10^{-3}$',r'$10^{-2}$',r'$10^{-1}$'])
+    ax.set_ylim(0,13.5)
+    plt.xlabel(r'Sym. Breaking Field $(h)$')
+    if ylabel:
+        plt.ylabel(r'Confindence Score  $(\xi)$')
+    else:
+        ax.set_yticklabels([])
+
+    if title is not None:
+        plt.title(title, fontsize=8)
+
 def plot_tc(results_dir, J, Ls, Ns, encoder_names, labels, colors, grid_dims=None):
     plt.figure(figsize=(figsize[0],figsize[0]))
     nrows, ncols = grid_dims
@@ -198,6 +224,34 @@ def plot_tc_extrapolate(results_dir, Js, Ns, encoder_names, labels, colors):
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "tc_extrapolate.pdf"))
     plt.close()
+
+### plot anomaly detection for ferromagnetic
+
+def plot_ad(results_dir, Ts, encoder_names, labels, colors):
+    plt.figure(figsize=(figsize[0],figsize[0]))
+    nrows, ncols = 1, len(Ts)
+    Tc = 2.0/np.log(1.0+np.sqrt(2))
+   
+    for (index, T) in enumerate(Ts):
+         
+        plt.subplot(nrows, ncols, index+1)
+        xlabel = index//ncols == nrows-1
+        ylabel = index%ncols == 0
+        if T < Tc:
+            title = f'$T = {T:.1f} < T_c$'
+        else:
+            title = f'$T = {T:.1f} > T_c$'
+        
+        subplot_ad(results_dir, T, encoder_names, labels, colors, xlabel=xlabel, ylabel=ylabel, title=title)
+        
+    handles, labels = get_unique_legend_handles_labels(plt.gcf())
+    plt.figlegend(handles, labels, ncol=2, loc=(0.22,0.93),fancybox=True, fontsize=8)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.85,wspace=0.1)
+    
+    output_dir = os.path.join(results_dir, "plots")
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(os.path.join(output_dir, "anomaly_detection.pdf"))
 
 
 ### plot error vs lattice size data
@@ -422,6 +476,7 @@ if __name__ == "__main__":
     Js = ["ferromagnetic", "antiferromagnetic"]
     Ls = [16, 32, 64, 128]
     Ns = [8, 16, 32, 64, 128, 256]
+    Ts = [2.0, 2.5]
 
     # old colors
     # red,orange,yellow,purple,blue,green = "red", "orange", "magenta", "purple", "blue", "green"
@@ -453,6 +508,12 @@ if __name__ == "__main__":
     plot_onsager(results_dir, Js, Ls, observable_names, labels, colors, N=256)
     colors = {str(N): color for (N, color) in zip(Ns, [red, orange, yellow, purple, blue, green])}
     plot_cor(results_dir, Js, Ls, Ns, "latent", colors)
+
+    print("Plotting anomaly detection . . . ")
+    ad_labels = {"baseline": "Baseline-AE", "ge": "GE-AE"}
+    ad_encoder_names = ['baseline','ge']
+    ad_colors = {'baseline':green,'ge':blue}
+    plot_ad(results_dir,Ts,ad_encoder_names,ad_labels,ad_colors)
 
     print("Tabulating generators . . . ")
     tabulate_generators(results_dir, Js, "latent_equivariant")
