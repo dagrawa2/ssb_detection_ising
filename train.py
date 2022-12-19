@@ -24,6 +24,7 @@ parser.add_argument('--L_test','-lt', type=int, default=0, help='Lattice size fo
 # network architecture
 parser.add_argument('--encoder_hidden', '-eh', default=4, type=int, help='Hidden neurons in the encoder.')
 parser.add_argument('--decoder_hidden', '-dh', default=64, type=int, help='Hidden neurons in the decoder.')
+parser.add_argument('--latent_dim', '-ld', default=1, type=int, help='Latent dimension of the autoencoder.')
 parser.add_argument('--symmetric', '-s', action="store_true", help='Enforce symmetries resulting from latent dimension.')
 parser.add_argument('--seed', '-sd', default=0, type=int, help='Pytorch RNG seed.')
 # SGD hyperparameters
@@ -89,7 +90,11 @@ temperatures = np.array([1.04+0.04*i for i in range(25)] \
 	+ [2.54+0.04*i for i in range(25)], dtype=np.float32)
 
 # load data
-data_filename = "states_symmetric.npz" if args.symmetric else "states.npz"
+if args.symmetric:
+	assert args.latent_dim <= 2, "Symmetric architecture is supported only for latent dimension 1 or 2."
+	data_filename = "states_symmetric.npz" if args.latent_dim==1 else "states_symmetric_2D.npz"
+else:
+	data_filename = "states.npz"
 if n_Ls > 0:
 	X = []
 	for L in args.Ls:
@@ -112,26 +117,31 @@ train_loader = DataLoader(TensorDataset(torch.as_tensor(X_train), torch.as_tenso
 val_loader = DataLoader(TensorDataset(torch.as_tensor(X_val), torch.as_tensor(T_val)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
 
 # build model
-input_dim = 2 if args.symmetric else args.L**2
-latent_dim = 1
-encoder = pf.models.MLP(input_dim, args.encoder_hidden, latent_dim)
-decoder = pf.models.MLP(latent_dim+1, args.decoder_hidden, input_dim)
+input_dim = 2*args.latent_dim if args.symmetric else args.L**2
+encoder = pf.models.MLP(input_dim, args.encoder_hidden, args.latent_dim)
+decoder = pf.models.MLP(args.latent_dim+1, args.decoder_hidden, input_dim)
 
 # initialize parameters
+input_dim = 2*args.latent_dim
 torch.manual_seed(args.seed)
-torch.nn.init.uniform_(encoder.linear1.bias, -1/np.sqrt(2), 1/np.sqrt(2))
+torch.nn.init.uniform_(encoder.linear1.bias, -1/np.sqrt(input_dim), 1/np.sqrt(input_dim))
 torch.nn.init.uniform_(encoder.linear2.weight, -1/np.sqrt(args.encoder_hidden), 1/np.sqrt(args.encoder_hidden))
 torch.nn.init.uniform_(encoder.linear2.bias, -1/np.sqrt(args.encoder_hidden), 1/np.sqrt(args.encoder_hidden))
-torch.nn.init.uniform_(decoder.linear1.weight, -1/np.sqrt(latent_dim+1), 1/np.sqrt(latent_dim+1))
-torch.nn.init.uniform_(decoder.linear1.bias, -1/np.sqrt(latent_dim+1), 1/np.sqrt(latent_dim+1))
-encoder_weight = 2/np.sqrt(2)*torch.rand(args.encoder_hidden, 2) - 1/np.sqrt(2)
-decoder_weight = 2/np.sqrt(args.decoder_hidden)*torch.rand(2, args.decoder_hidden) - 1/np.sqrt(args.decoder_hidden)
-decoder_bias = 2/np.sqrt(args.decoder_hidden)*torch.rand(2) - 1/np.sqrt(args.decoder_hidden)
+torch.nn.init.uniform_(decoder.linear1.weight, -1/np.sqrt(args.latent_dim+1), 1/np.sqrt(args.latent_dim+1))
+torch.nn.init.uniform_(decoder.linear1.bias, -1/np.sqrt(args.latent_dim+1), 1/np.sqrt(args.latent_dim+1))
+encoder_weight = 2/np.sqrt(input_dim)*torch.rand(args.encoder_hidden, input_dim) - 1/np.sqrt(input_dim)
+decoder_weight = 2/np.sqrt(args.decoder_hidden)*torch.rand(input_dim, args.decoder_hidden) - 1/np.sqrt(args.decoder_hidden)
+decoder_bias = 2/np.sqrt(args.decoder_hidden)*torch.rand(input_dim) - 1/np.sqrt(args.decoder_hidden)
 if not args.symmetric:
-	def checkerboardify(x, L):
-		y = torch.tile(x, [1, L//2])
-		return torch.tile(torch.cat([y, torch.flip(y, [1])], 1), [1, L//2])
-	encoder_weight = 2/args.L**2*checkerboardify(encoder_weight, args.L)
+	if args.latent_dim == 1:
+		def checkerboardify(x, L):
+			y = torch.tile(x, [1, L//2])
+			return torch.tile(torch.cat([y, torch.flip(y, [1])], 1), [1, L//2])
+	if args.latent_dim == 2:
+		def checkerboardify(x, L):
+			y = torch.cat([torch.tile(x[:,:2], [1, L//2]), torch.tile(x[:,2:], [1, L//2])], 1)
+			return torch.tile(y, [1, L//2])
+	encoder_weight = input_dim/args.L**2*checkerboardify(encoder_weight, args.L)
 	decoder_weight = torch.t( checkerboardify(torch.t(decoder_weight), args.L) )
 	decoder_bias = checkerboardify(decoder_bias.unsqueeze(0), args.L).squeeze(0)
 encoder.linear1.weight.data.copy_(encoder_weight)
@@ -157,21 +167,26 @@ trainer.fit(train_loader, callbacks)
 # estimate symmetry generator reps
 if args.equivariance_reg > 0:
 	train_loader = DataLoader(train_loader.dataset, batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
-	flip_rep, neg_rep = trainer.generator_reps(train_loader)
-	generator_reps = {"spatial": float(flip_rep), "internal": float(neg_rep)}
-	with open(os.path.join(results_dir, "generator_reps.json"), "w") as fp:
-		json.dump(generator_reps, fp, indent=2)
+	if args.latent_dim == 1:
+		flip_rep, neg_rep = trainer.generator_reps(train_loader)
+		generator_reps = {"spatial": float(flip_rep), "internal": float(neg_rep)}
+		with open(os.path.join(results_dir, "generator_reps.json"), "w") as fp:
+			json.dump(generator_reps, fp, indent=2)
+	if args.latent_dim == 2:
+		reps = trainer.generator_reps_2D(train_loader)
+		np.savez(os.path.join(results_dir, "generator_reps.npz"), **reps)
 
 # generate encodings
 del train_loader; del val_loader; gc.collect()
-with np.load(os.path.join(args.data_dir, "L{:d}".format(args.L_test), "aggregate", data_filename), mmap_mode="r") as states_L:
-	X = states_L["test"][:,:args.n_test].reshape((-1, states_L["test"].shape[2]))
-T = np.repeat(temperatures, args.n_test)[:,None]
-test_loader = DataLoader(TensorDataset(torch.as_tensor(X), torch.as_tensor(T)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
-encodings = trainer.encode(test_loader)
-assert encodings.shape[1] == 1, "This script currently only supports 1D encodings."
-measurements = encodings.squeeze(-1).reshape((-1, args.n_test))
-np.savez(os.path.join(results_dir, "measurements.npz"), temperatures=temperatures, measurements=measurements)
+if args.latent_dim == 1:
+	with np.load(os.path.join(args.data_dir, "L{:d}".format(args.L_test), "aggregate", data_filename), mmap_mode="r") as states_L:
+		X = states_L["test"][:,:args.n_test].reshape((-1, states_L["test"].shape[2]))
+	T = np.repeat(temperatures, args.n_test)[:,None]
+	test_loader = DataLoader(TensorDataset(torch.as_tensor(X), torch.as_tensor(T)), batch_size=args.val_batch_size, shuffle=False, drop_last=False, num_workers=8)
+	encodings = trainer.encode(test_loader)
+	assert encodings.shape[1] == 1, "This script currently only supports 1D encodings."
+	measurements = encodings.squeeze(-1).reshape((-1, args.n_test))
+	np.savez(os.path.join(results_dir, "measurements.npz"), temperatures=temperatures, measurements=measurements)
 
 # function to convert np array to list of python numbers
 ndarray2list = lambda arr, dtype: [getattr(__builtins__, dtype)(x) for x in arr]
