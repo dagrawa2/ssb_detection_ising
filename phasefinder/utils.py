@@ -6,6 +6,11 @@ def inverse_softplus(y):
 	return y + torch.log(1.0 - torch.exp(-y))
 
 
+def nullproj(A):
+	I = torch.eye(A.shape[1], dtype=A.dtype)
+	return I - torch.linalg.lstsq(A, A, driver="gelsd").solution
+
+
 def build_path(results_dir, J, observable_name, L, N=None, fold=None, seed=None, L_test=None, subdir=None):
 	if subdir is not None:
 		results_dir = os.path.join(results_dir, subdir)

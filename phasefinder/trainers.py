@@ -3,6 +3,8 @@ import torch
 from torch import nn, optim
 from torch.nn import functional as F
 
+from . import models
+
 
 class Autoencoder(object):
 
@@ -17,6 +19,15 @@ class Autoencoder(object):
 		self.device = device
 
 		self.latent_dim = self.encoder.output_dim
+		if self.equivariance_reg > 0 and self.latent_dim == 2:
+			transforms = { \
+				"rho": lambda x: x[:,[1,3,0,2]], \
+				"tau": lambda x: x[:,[1,0,3,2]], \
+				"sigma": lambda x: -x \
+			}
+			self.regularizer_2D = models.SymmetryReg(self.encoder, transforms).to(self.device)
+		else:
+			self.regularizer_2D = None
 
 		if self.rescale_lr:
 			param_group1 = [encoder.linear1.weight]
@@ -25,6 +36,8 @@ class Autoencoder(object):
 			self.optimizer = optim.Adam([{"params": param_group1, "lr": 2*self.lr/encoder.linear1.weight.shape[1]}, {"params": param_group2, "lr": self.lr/2}, {"params": param_group3, "lr": self.lr}])
 		else:
 			parameters = list(self.encoder.parameters()) + list(decoder.parameters())
+			if self.regularizer_2D is not None:
+				parameters = parameters + list(self.regularizer_2D.parameters())
 			self.optimizer = optim.Adam(parameters, lr=self.lr)
 
 	def fit(self, train_loader, callbacks):
@@ -62,22 +75,7 @@ class Autoencoder(object):
 							cos_similarities.append( (Z*Z_transformed).sum().unsqueeze(0)/torch.sqrt(Z_square_norm*Z_transformed_square_norm) )
 						loss += 1 + torch.cat(cos_similarities, 0).min()
 					else:
-						transforms = [ \
-							lambda x: x[:,[1,3,0,2]], \
-							lambda x: x[:,[1,0,3,2]], \
-							lambda x: -x \
-						]
-						Z_transformed = torch.cat([self.encoder(transform(X_batch)) for transform in transforms], 1)
-						psi = torch.linalg.lstsq(Z, Z_transformed).solution.T
-						psi_rho = psi[:2]
-						psi_tau = psi[2:4]
-						psi_sigma = psi[4:]
-						I = torch.eye(self.latent_dim, dtype=Z.dtype)
-						loss += self.equivariance_reg*( \
-							torch.stack([((I - A.T@A)**2).sum() for A in [psi_rho, psi_tau, psi_sigma]], 0).sum() \
-							+ torch.stack([((I - A@A)**2).sum() for A in [psi_tau, psi_sigma, psi_rho@psi_rho, psi_rho@psi_tau, psi_tau@psi_sigma]], 0).sum() \
-							+ sum((I - psi_rho.T@psi_sigma@psi_rho@psi_sigma)**2).sum() \
-							+ torch.stack([F.relu(torch.trace(A)) for A in [psi_rho, psi_tau, psi_sigma]], 0).prod() )
+						loss += self.equivariance_reg * self.regularizer_2D(X_batch)
 				loss.backward()
 				self.optimizer.step()
 				self.optimizer.zero_grad()
@@ -131,12 +129,11 @@ class Autoencoder(object):
 	def generator_reps_2D(self, val_loader):
 		assert self.latent_dim == 2, "generator_reps_2D can only be used for latent dimension 2. For latent dimension 1, use generator_reps."
 		Z = self.encode(val_loader)
-		Z_transformed = { \
-			"rho": self.encode(val_loader, transform=lambda x: x[:,[1,3,0,2]]), \
-			"tau": self.encode(val_loader, transform=lambda x: x[:,[1,0,3,2]]), \
-			"sigma": self.encode(val_loader, transform=lambda x: -x) \
-		}
-		reps = {key: np.linalg.lstsq(Z, val)[0].T for (key, val) in Z_transformed.items()}
+		P = np.eye(Z.shape[1], dtype=Z.dtype) - np.linalg.lstsq(Z, Z)[0]
+		latent_param = self.regularizer_2D.latent_param.detach().cpu().numpy()
+		offset = P@latent_param
+
+		reps = {gen: np.linalg.lstsq(Z, self.encode(val_loader, transform=transform))[0] + offset for (gen, transform) in self.regularizer_2D.transforms.items()}
 		return reps
 
 	def save_encoder(self, filename):
