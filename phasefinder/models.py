@@ -42,15 +42,11 @@ class SymmetryReg(nn.Module):
 		I = torch.eye(Z.shape[1], dtype=Z.dtype)
 
 		loss = 0.0
-		rec_traces = []
 		for (_, transform) in self.transforms.items():
 			Z_transformed = self.encoder(transform(X))
 			sol = torch.linalg.lstsq(Z, Z_transformed).solution
 			orth_sol = sol + P@self.latent_param
-			rec_traces.append( F.relu(torch.trace(orth_sol)/orth_sol.shape[0]) )
-			loss += Z_transformed.pow(2).sum() - (Z_transformed*(Z@sol)).sum() \
-				+ (orth_sol.T@orth_sol - I).pow(2).sum()
-
-		loss += torch.as_tensor(rec_traces).min()
+			loss += 1.0 - (Z_transformed*(Z@sol)).sum()/Z_transformed.pow(2).sum() \
+				+ (I - orth_sol.T@orth_sol).pow(2).sum()
 
 		return loss
