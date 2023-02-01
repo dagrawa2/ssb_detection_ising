@@ -7,13 +7,16 @@ Devanshu Agrawal, Adrian Del Maestro, Steven Johnston, and James Ostrowski
 
 ### Abstract
 
-We introduce the group-equivariant autoencoder (GE-autoencoder) -- a deep neural network method that locates phase boundaries in the Ising universality class by determining which symmetries of the Hamiltonian are broken at each temperature. 
-The encoder network of the GE-autoencoder models the order parameter observable associated with the phase transition. 
-The parameters of the GE-autoencoder are constrained such that the encoder is invariant to the subgroup of symmetries that never break; 
-this results in a dramatic reduction in the number of free parameters such that the GE-autoencoder size is independent of the system size. 
-The loss function of the GE-autoencoder includes regularization terms that enforce equivariance to the remaining quotient group of symmetries. 
-We test the GE-autoencoder on the 2D classical ferromagnetic and antiferromagnetic Ising models, finding that 
-the GE-autoencoder (1) accurately determines which symmetries are broken at each temperature, and (2) estimates the critical temperature with greater accuracy and time-efficiency than a symmetry-agnostic autoencoder, once finite-size scaling analysis is taken into account.
+We introduce the group-equivariant autoencoder (GE-autoencoder) -- a deep neural network (DNN) method that locates phase boundaries by determining which symmetries of the Hamiltonian have spontaneously broken at each temperature. 
+We use group theory to deduce which symmetries of the system remain intact in all phases, and then use this information to constrain the parameters of the GE-autoencoder such that the encoder learns an order parameter invariant to these never-broken symmetries. 
+This procedure produces a dramatic reduction in the number of free parameters such that the GE-autoencoder size is independent of the system size. 
+We include symmetry regularization terms in the loss function of the GE-autoencoder so that the learned order parameter is also equivariant to the remaining symmetries of the system. 
+By examining the group representation by which the learned order parameter transforms, we are then able to extract information about the associated spontaneous symmetry breaking. 
+We test the GE-autoencoder on the 2D classical ferromagnetic and antiferromagnetic Ising models, finding that the GE-autoencoder 
+(1) accurately determines which symmetries have spontaneously broken at each temperature; 
+(2) estimates the critical temperature in the thermodynamic limit with greater accuracy, robustness, and time-efficiency than a symmetry-agnostic baseline autoencoder; and 
+(3) detects the presence of an external symmetry-breaking magnetic field with greater sensitivity than the baseline method. 
+Finally, we describe various key implementation details, including a new method for extracting the critical temperature estimate from trained autoencoders and calculations of the DNN initialization and learning rate settings required for fair model comparisons.
 
 
 ### Description
@@ -31,6 +34,8 @@ This repository includes links, code, and scripts to generate the figures in a p
 - pandas
 - scikit-learn
 - scipy
+
+For running `never_broken.py' and reproducing Table III in the paper, the [Gappy](https://github.com/embray/gappy) package must also be installed.
 
 
 # Data generation
@@ -50,9 +55,12 @@ To aggregate the generated data across temperatures, run the following:
 
 # Running models and reproducing results
 
-To train all models, run the following (make take days to finish):
+## For scalar order parameters
 
-    bash train.sh
+To train all models, run the following for every integer value of `[fold]' between 1 and 8 (make take days to finish):
+
+    bash train.sh [fold]
+    python anomaly_detection.py
 
 To analyze the results and generate all plots, run the following:
 
@@ -60,3 +68,24 @@ To analyze the results and generate all plots, run the following:
     python plots.py
 
 The plots will appear in the `results/plots` directory.
+
+To additionally reproduce the quantification of equivariance of the baseline-autoencoder described in Sec. IV.B of the paper, run the following:
+
+    bash baseline_equivariance.sh
+    python process_baseline_equivariance.py
+
+
+## For vector order parameters
+
+To aggregate the necessary data, run the following:
+
+    python aggregate_data_2D.py
+
+To train all models, analyze the results, and reproduce Table II in the paper, run the following for every integer value of `[fold]' between 1 and 8 (make take days to finish):
+
+    bash train_2D.sh [fold]
+    python process_2D.py
+
+Finally, to reproduce Table III in the paper, run the following:
+
+    python never_broken.py
